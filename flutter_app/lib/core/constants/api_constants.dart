@@ -3,8 +3,8 @@ class ApiConstants {
   ApiConstants._();
 
   // ── Base URL ──────────────────────────────────────────────────
-  // Local: Django backend
-  static const String baseUrl = 'http://192.168.1.2:8000/api';
+  // Production: Render-hosted Django backend
+  static const String baseUrl = 'https://foursale-app.onrender.com/api';
 
   // ── Auth ──────────────────────────────────────────────────────
   static const String register = '/auth/register/';
