@@ -3,8 +3,8 @@ class ApiConstants {
   ApiConstants._();
 
   // ── Base URL ──────────────────────────────────────────────────
-  // Production: Vercel-hosted Django backend
-  static const String baseUrl = 'https://g-p-khorda-ebon.vercel.app/api';
+  // Local: Django backend
+  static const String baseUrl = 'http://192.168.1.2:8000/api';
 
   // ── Auth ──────────────────────────────────────────────────────
   static const String register = '/auth/register/';
