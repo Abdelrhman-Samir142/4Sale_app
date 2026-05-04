@@ -9,6 +9,7 @@ import '../../services/classify_service.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/app_snackbar.dart';
 
 class SellScreen extends ConsumerStatefulWidget {
   const SellScreen({super.key});
@@ -28,7 +29,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   String _condition = 'good';
   bool _isAuction = false;
   DateTime? _auctionEnd;
-  List<XFile> _images = [];
+  final List<XFile> _images = [];
   String? _aiCategory;
   bool _loading = false;
   String? _error;
@@ -48,6 +49,17 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   Future<void> _pickImages() async {
     final picked = await _picker.pickMultiImage();
     if (picked.isNotEmpty) {
+      if (_images.length + picked.length > 10) {
+        if (mounted) {
+          AppSnackbar.warning(
+            context,
+            ref.read(languageProvider).locale == 'ar'
+                ? 'يمكنك إضافة 10 صور كحد أقصى'
+                : 'You can upload a maximum of 10 images',
+          );
+        }
+        return;
+      }
       setState(() => _images.addAll(picked));
       if (_images.isNotEmpty) {
         try {
@@ -56,19 +68,38 @@ class _SellScreenState extends ConsumerState<SellScreen> {
             _aiCategory = result['category'] as String?;
             if (_aiCategory != null) _category = _aiCategory!;
           });
-        } catch (_) {}
+        } catch (e) {
+          if (mounted) {
+            AppSnackbar.error(
+              context,
+              ref.read(languageProvider).locale == 'ar'
+                  ? 'فشل تصنيف الصورة بالذكاء الاصطناعي'
+                  : 'AI image classification failed',
+            );
+          }
+        }
       }
     }
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    
+    final priceVal = double.tryParse(_priceC.text.trim());
+    if (priceVal == null) {
+      AppSnackbar.error(
+        context,
+        ref.read(languageProvider).locale == 'ar' ? 'السعر غير صالح' : 'Invalid price format',
+      );
+      return;
+    }
+
     setState(() { _loading = true; _error = null; });
     try {
       await ProductsService.create(
         title: _titleC.text.trim(),
         description: _descC.text.trim(),
-        price: double.parse(_priceC.text.trim()),
+        price: priceVal,
         category: _category,
         condition: _condition,
         location: _locationC.text.trim(),
@@ -78,18 +109,28 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         imagePaths: _images.map((x) => x.path).toList(),
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(ref.read(languageProvider).locale == 'ar'
-                ? 'تم نشر الإعلان بنجاح ✅'
-                : 'Listing Published Successfully ✅'),
-            backgroundColor: AppColors.primary600,
-          ),
+        AppSnackbar.success(
+          context,
+          ref.read(languageProvider).locale == 'ar'
+              ? 'تم نشر الإعلان بنجاح ✅'
+              : 'Listing Published Successfully ✅',
         );
         context.go('/');
       }
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() { _error = e.toString(); });
+      if (mounted) {
+        AppSnackbar.error(
+          context,
+          ref.read(languageProvider).locale == 'ar'
+              ? 'فشل نشر الإعلان: ${e.toString().replaceAll('Exception: ', '')}'
+              : 'Failed to publish: ${e.toString().replaceAll('Exception: ', '')}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() { _loading = false; });
+      }
     }
   }
 
@@ -301,7 +342,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _images.length,
-              separatorBuilder: (_, __) => SizedBox(width: 10.w),
+              separatorBuilder: (_, _) => SizedBox(width: 10.w),
               itemBuilder: (_, i) => Stack(children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12.r),

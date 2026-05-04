@@ -1,22 +1,26 @@
 import 'package:flutter/material.dart';
-import '../../services/auth_service.dart';
 import '../storage/secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../screens/auth/login_screen.dart';
 import 'package:go_router/go_router.dart';
 
 class AuthGuard {
+  /// Keys to PRESERVE across logout (user experience settings).
+  static const _preservedKeys = {'locale', 'language_selected', 'theme_mode'};
+
   static Future<void> performStrictLogout(BuildContext context, {bool showSessionExpired = false}) async {
-    // 1. Clear secure tokens
+    // 1. Clear secure tokens (JWT access + refresh)
     await SecureStorageService.clearTokens();
     
-    // 2. Clear ALL stored user data from SharedPrefs as requested
+    // 2. Clear SharedPrefs EXCEPT user-experience settings
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    final keys = prefs.getKeys().toList();
+    for (final key in keys) {
+      if (!_preservedKeys.contains(key)) {
+        await prefs.remove(key);
+      }
+    }
 
-    // 3. Reset auth state (If using Riverpod, this is implicitly caught by GoRouter's refreshListenable on next build,
-    // but we forcibly wipe the stack below as requested).
-    
+    // 3. Show session-expired message if triggered by token refresh failure
     if (context.mounted && showSessionExpired) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -26,9 +30,10 @@ class AuthGuard {
       );
     }
     
-    // 4. Navigate to LoginScreen and REMOVE ALL previous routes natively via GoRouter
+    // 4. Navigate to LoginScreen and REMOVE ALL previous routes
     if (context.mounted) {
       context.go('/login');
     }
   }
 }
+

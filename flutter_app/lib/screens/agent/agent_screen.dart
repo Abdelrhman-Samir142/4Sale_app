@@ -129,7 +129,7 @@ class _AgentScreenState extends ConsumerState<AgentScreen>
               // Target selector
               _sheetField(
                 child: DropdownButtonFormField<String>(
-                  value: selectedTarget,
+                  initialValue: selectedTarget,
                   decoration: InputDecoration(
                     labelText: dict['targetItem'] as String,
                     labelStyle:
@@ -404,7 +404,7 @@ class _AgentScreenState extends ConsumerState<AgentScreen>
           ...List.generate(3, (i) {
             return AnimatedBuilder(
               animation: _orbCtrl,
-              builder: (_, __) {
+              builder: (_, _) {
                 final angle =
                     _orbCtrl.value * 2 * math.pi + (i * math.pi * 2 / 3);
                 final x = math.cos(angle) * (40.w + i * 15.w);
@@ -773,7 +773,7 @@ class _AgentCardState extends State<_AgentCard>
 
     return AnimatedBuilder(
       animation: _glowCtrl,
-      builder: (_, __) {
+      builder: (_, _) {
         return Container(
           padding: EdgeInsets.all(16.w),
           decoration: BoxDecoration(

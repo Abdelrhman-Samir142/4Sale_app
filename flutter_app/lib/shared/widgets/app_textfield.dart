@@ -58,8 +58,11 @@ class _AppTextFieldState extends State<AppTextField> {
     final hasError = widget.errorText != null && widget.errorText!.isNotEmpty;
 
     Color borderColor = AppColors.slate200;
-    if (hasError) borderColor = AppColors.errorRed;
-    else if (_hasFocus) borderColor = AppColors.primary600;
+    if (hasError) {
+      borderColor = AppColors.errorRed;
+    } else if (_hasFocus) {
+      borderColor = AppColors.primary600;
+    }
 
     Widget textField = AnimatedContainer(
       duration: const Duration(milliseconds: 200),

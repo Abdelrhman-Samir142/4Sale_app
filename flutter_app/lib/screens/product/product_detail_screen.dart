@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/products_service.dart';
@@ -16,6 +17,8 @@ import '../../shared/widgets/app_shimmer.dart';
 import 'dart:async';
 import 'dart:ui';
 
+import '../../models/product.dart';
+
 class ProductDetailScreen extends ConsumerStatefulWidget {
   final String productId;
   const ProductDetailScreen({super.key, required this.productId});
@@ -25,9 +28,10 @@ class ProductDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
-  Map<String, dynamic>? _product;
+  Product? _product;
   bool _loading = true;
   bool _isWishlisted = false;
+  String? _errorMsg;
   final _bidC = TextEditingController();
   Timer? _auctionTimer;
   String _timeLeft = '';
@@ -57,14 +61,18 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         _loading = false;
       });
       try {
-        final w = await WishlistService.check(data['id'] as int);
+        final w = await WishlistService.check(data.id);
         setState(() => _isWishlisted = w);
-      } catch (_) {}
-      if (data['is_auction'] == true && data['auction'] != null) {
-        _startAuctionTimer(data['auction']['end_time'] as String);
+      } catch (_) {} // Non-critical: wishlist check
+      if (data.isAuction == true && data.auction != null) {
+        _startAuctionTimer(data.auction!['end_time'] as String);
       }
-    } catch (_) {
-      setState(() => _loading = false);
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        final isAr = ref.read(languageProvider).locale == 'ar';
+        _errorMsg = isAr ? 'فشل تحميل المنتج' : 'Failed to load product';
+      });
     }
   }
 
@@ -102,7 +110,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     if (amount == null) return;
     HapticFeedback.mediumImpact();
     try {
-      final auctionId = _product!['auction']['id'].toString();
+      final auctionId = _product!.auction!['id'].toString();
       await AuctionsService.placeBid(auctionId, amount);
       _bidC.clear();
       await _load();
@@ -119,12 +127,30 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   Future<void> _contactSeller() async {
     HapticFeedback.lightImpact();
     try {
-      final conv =
-          await ChatService.startConversation(_product!['id'] as int);
+      final conv = await ChatService.startConversation(_product!.id);
       if (mounted) context.push('/chat/${conv['id']}');
     } catch (e) {
       if (mounted) _showErrorSnackbar(e.toString());
     }
+  }
+
+  /// Share product via native share sheet (share_plus)
+  Future<void> _shareProduct() async {
+    if (_product == null) return;
+    HapticFeedback.lightImpact();
+    final isAr = ref.read(languageProvider).locale == 'ar';
+    final currency = ref.read(languageProvider).dict['currency'] as String;
+    final p = _product!;
+    final title = p.title;
+    final price = p.price;
+    final id = p.id.toString();
+
+    final msg = isAr
+        ? '🛍️ $title\n💰 ${double.tryParse(price)?.toStringAsFixed(0) ?? price} $currency\n\nشاهد المنتج على 4Sale:\nhttps://foursale-app.onrender.com/api/products/$id/'
+        : '🛍️ $title\n💰 ${double.tryParse(price)?.toStringAsFixed(0) ?? price} $currency\n\nView on 4Sale:\nhttps://foursale-app.onrender.com/api/products/$id/';
+
+    // ignore: deprecated_member_use
+    await Share.share(msg, subject: title);
   }
 
   void _showSuccessSnackbar(String msg) {
@@ -154,15 +180,31 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     final isAr = lang.locale == 'ar';
 
     if (_loading) return _buildSkeleton();
+    if (_errorMsg != null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFFAFBFC),
+        body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.error_outline_rounded, size: 56, color: AppColors.errorRed.withAlpha(120)),
+          SizedBox(height: 16),
+          Text(_errorMsg!, style: TextStyle(fontSize: 16, color: AppColors.slate600, fontWeight: FontWeight.w600)),
+          SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () { setState(() { _loading = true; _errorMsg = null; }); _load(); },
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(isAr ? 'إعادة المحاولة' : 'Retry'),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary600, foregroundColor: Colors.white),
+          ),
+        ])),
+      );
+    }
     if (_product == null) return _buildNotFound(isAr);
 
     final p = _product!;
-    final images = (p['images'] as List?) ?? [];
-    final isAuction = p['is_auction'] == true;
-    final auction = p['auction'] as Map<String, dynamic>?;
-    final owner = p['owner'] as Map<String, dynamic>?;
-    final ownerProfile = p['owner_profile'] as Map<String, dynamic>?;
-    final isOwner = auth.userId != null && owner?['id'] == auth.userId;
+    final images = p.images;
+    final isAuction = p.isAuction;
+    final auction = p.auction;
+    final owner = p.seller;
+    final isOwner = auth.userId != null && owner?.id == auth.userId;
 
     return Directionality(
       textDirection: lang.textDirection,
@@ -197,10 +239,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                   child: _buildInfoChips(p, dict, isAr),
                 ),
                 // Seller Info
-                if (ownerProfile != null)
+                if (owner != null)
                   SliverToBoxAdapter(
                     child: _buildSellerCard(
-                        owner, ownerProfile, dict, isAr, currency),
+                        owner, dict, isAr, currency),
                   ),
                 // Bottom padding for FAB
                 SliverToBoxAdapter(child: SizedBox(height: 100.h)),
@@ -222,7 +264,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   // IMAGE GALLERY
   // ═══════════════════════════════════════════════════════════════
   Widget _buildImageGallery(
-      List images, Map<String, dynamic> p, bool isAuction) {
+      List<ProductImage> images, Product p, bool isAuction) {
     return SizedBox(
       height: 340.h,
       child: Stack(
@@ -235,15 +277,15 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               onPageChanged: (i) => setState(() => _currentImageIndex = i),
               itemBuilder: (_, i) {
                 return Hero(
-                  tag: 'product-image-${p['id']}',
+                  tag: 'product-image-${p.id}',
                   child: CachedNetworkImage(
-                    imageUrl: images[i]['image'] as String,
+                    imageUrl: images[i].image,
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: 340.h,
-                    placeholder: (_, __) =>
+                    placeholder: (_, _) =>
                         Container(color: const Color(0xFFF1F5F9)),
-                    errorWidget: (_, __, ___) => Container(
+                    errorWidget: (_, _, _) => Container(
                       color: const Color(0xFFF1F5F9),
                       child: Icon(Icons.broken_image_outlined,
                           size: 48.w, color: AppColors.slate300),
@@ -374,7 +416,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   // FLOATING APP BAR
   // ═══════════════════════════════════════════════════════════════
   Widget _buildFloatingAppBar(
-      bool isOwner, bool isLoggedIn, Map<String, dynamic> p) {
+      bool isOwner, bool isLoggedIn, Product p) {
     return Positioned(
       top: MediaQuery.of(context).padding.top + 8.h,
       left: 12.w,
@@ -387,10 +429,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             onTap: () => context.pop(),
           ),
           const Spacer(),
-          // Share
+          // Share — uses share_plus native sheet
           _glassButton(
             icon: Icons.share_rounded,
-            onTap: () {},
+            onTap: _shareProduct,
           ),
           SizedBox(width: 8.w),
           // Wishlist
@@ -402,7 +444,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               iconColor: _isWishlisted ? AppColors.errorRed : null,
               onTap: () async {
                 HapticFeedback.lightImpact();
-                await WishlistService.toggle(p['id'] as int);
+                await WishlistService.toggle(p.id);
                 setState(() => _isWishlisted = !_isWishlisted);
               },
             ),
@@ -440,11 +482,11 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   // ═══════════════════════════════════════════════════════════════
   // PRODUCT INFO
   // ═══════════════════════════════════════════════════════════════
-  Widget _buildProductInfo(Map<String, dynamic> p,
+  Widget _buildProductInfo(Product p,
       Map<String, dynamic> dict, String currency, bool isAr) {
-    final title = p['title'] ?? '';
-    final price = p['price']?.toString() ?? '0';
-    final isAuction = p['is_auction'] == true;
+    final title = p.title;
+    final price = p.price;
+    final isAuction = p.isAuction;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 0),
@@ -468,7 +510,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${double.tryParse(price)?.toStringAsFixed(0) ?? price}',
+                double.tryParse(price)?.toStringAsFixed(0) ?? price,
                 style: TextStyle(
                   fontSize: 28.sp,
                   fontWeight: FontWeight.w900,
@@ -508,7 +550,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                         size: 14.w, color: AppColors.slate400),
                     SizedBox(width: 4.w),
                     Text(
-                      '${p['views_count'] ?? 0}',
+                      '${p.viewsCount}',
                       style: TextStyle(
                         fontSize: 12.sp,
                         color: AppColors.slate500,
@@ -791,8 +833,8 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   // DESCRIPTION
   // ═══════════════════════════════════════════════════════════════
   Widget _buildDescription(
-      Map<String, dynamic> p, Map<String, dynamic> dict, bool isAr) {
-    final desc = p['description'] as String? ?? '';
+      Product p, Map<String, dynamic> dict, bool isAr) {
+    final desc = p.description;
     if (desc.isEmpty) return const SizedBox.shrink();
 
     return Padding(
@@ -833,7 +875,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   // INFO CHIPS
   // ═══════════════════════════════════════════════════════════════
   Widget _buildInfoChips(
-      Map<String, dynamic> p, Map<String, dynamic> dict, bool isAr) {
+      Product p, Map<String, dynamic> dict, bool isAr) {
     return Padding(
       padding: EdgeInsets.fromLTRB(20.w, 16.h, 20.w, 0),
       child: Wrap(
@@ -841,12 +883,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         runSpacing: 8.h,
         children: [
           _premiumChip(Icons.category_rounded,
-              '${p['category']}', AppColors.latestBlue),
+              p.category, AppColors.latestBlue),
           _premiumChip(Icons.star_rounded,
-              '${p['condition']}', AppColors.warningAmber),
-          if ((p['location'] as String?)?.isNotEmpty == true)
+              p.condition, AppColors.warningAmber),
+          if (p.location.isNotEmpty)
             _premiumChip(Icons.location_on_rounded,
-                '${p['location']}', AppColors.errorRed),
+                p.location, AppColors.errorRed),
         ],
       ),
     ).animate().fadeIn(delay: 300.ms);
@@ -882,15 +924,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   // SELLER CARD
   // ═══════════════════════════════════════════════════════════════
   Widget _buildSellerCard(
-      Map<String, dynamic>? owner,
-      Map<String, dynamic> ownerProfile,
+      ProductSeller? owner,
       Map<String, dynamic> dict,
       bool isAr,
       String currency) {
-    final username = owner?['username'] as String? ?? '';
+    final username = owner?.username ?? '';
     final initial = username.isNotEmpty ? username[0].toUpperCase() : '?';
-    final trust =
-        ((ownerProfile['trust_score'] as num?) ?? 0).clamp(0, 100);
     final hue =
         (username.codeUnits.fold<int>(0, (s, c) => s + c) * 37) % 360;
     final avatarColor =
@@ -965,119 +1004,15 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                           color: AppColors.slate800,
                         ),
                       ),
-                      Text(
-                        ownerProfile['city'] ?? '',
-                        style: TextStyle(
-                          fontSize: 12.sp,
-                          color: AppColors.slate400,
-                        ),
-                      ),
                     ],
                   ),
                 ),
-              ],
-            ),
-            SizedBox(height: 14.h),
-            // Trust score
-            Row(
-              children: [
-                Text(
-                  '${dict['trustScore']}',
-                  style: TextStyle(
-                      fontSize: 12.sp,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.slate500),
-                ),
-                SizedBox(width: 10.w),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6.r),
-                    child: LinearProgressIndicator(
-                      value: trust / 100,
-                      backgroundColor: AppColors.slate100,
-                      color: trust > 70
-                          ? AppColors.successGreen
-                          : trust > 40
-                              ? AppColors.warningAmber
-                              : AppColors.errorRed,
-                      minHeight: 8.h,
-                    ),
-                  ),
-                ),
-                SizedBox(width: 10.w),
-                Container(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: 8.w, vertical: 2.h),
-                  decoration: BoxDecoration(
-                    color: (trust > 70
-                            ? AppColors.successGreen
-                            : trust > 40
-                                ? AppColors.warningAmber
-                                : AppColors.errorRed)
-                        .withAlpha(12),
-                    borderRadius: BorderRadius.circular(6.r),
-                  ),
-                  child: Text(
-                    '$trust%',
-                    style: TextStyle(
-                      fontSize: 12.sp,
-                      fontWeight: FontWeight.w800,
-                      color: trust > 70
-                          ? AppColors.successGreen
-                          : trust > 40
-                              ? AppColors.warningAmber
-                              : AppColors.errorRed,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.h),
-            // Stats row
-            Row(
-              children: [
-                _sellerStatChip(Icons.star_rounded,
-                    '${ownerProfile['seller_rating'] ?? 0}',
-                    dict['rating'] as String, AppColors.warningAmber),
-                SizedBox(width: 12.w),
-                _sellerStatChip(Icons.shopping_bag_rounded,
-                    '${ownerProfile['total_sales'] ?? 0}',
-                    dict['totalSales'] as String, AppColors.primary600),
               ],
             ),
           ],
         ),
       ),
     ).animate().fadeIn(delay: 350.ms).slideY(begin: 0.05, end: 0);
-  }
-
-  Widget _sellerStatChip(
-      IconData icon, String value, String label, Color color) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-      decoration: BoxDecoration(
-        color: color.withAlpha(8),
-        borderRadius: BorderRadius.circular(10.r),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14.w, color: color),
-          SizedBox(width: 4.w),
-          Text(value,
-              style: TextStyle(
-                  fontSize: 13.sp,
-                  fontWeight: FontWeight.w800,
-                  color: color)),
-          SizedBox(width: 4.w),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 11.sp,
-                  color: AppColors.slate400,
-                  fontWeight: FontWeight.w500)),
-        ],
-      ),
-    );
   }
 
   // ═══════════════════════════════════════════════════════════════

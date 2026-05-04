@@ -7,6 +7,7 @@ import '../../providers/language_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/chat_service.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/app_snackbar.dart';
 import 'dart:async';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -70,8 +71,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           _scrollToBottom();
         }
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        if (_messages.isEmpty) {
+          final isAr = ref.read(languageProvider).locale == 'ar';
+          AppSnackbar.error(context, isAr ? 'فشل تحميل المحادثة' : 'Failed to load chat');
+        }
+      }
     }
   }
 
@@ -98,7 +105,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       await ChatService.sendMessage(widget.conversationId, text);
       await _load();
       _scrollToBottom();
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        final isAr = ref.read(languageProvider).locale == 'ar';
+        AppSnackbar.error(context, isAr ? 'فشل إرسال الرسالة' : 'Failed to send message');
+      }
+    }
     if (mounted) setState(() => _isSending = false);
   }
 

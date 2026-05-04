@@ -8,6 +8,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/language_provider.dart';
 import '../../services/wishlist_service.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/app_snackbar.dart';
 import '../../shared/widgets/app_shimmer.dart';
 
 class WishlistScreen extends ConsumerStatefulWidget {
@@ -30,7 +31,12 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
     setState(() => _loading = true);
     try {
       _items = await WishlistService.list();
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        final isAr = ref.read(languageProvider).locale == 'ar';
+        AppSnackbar.error(context, isAr ? 'فشل تحميل المفضلة' : 'Failed to load wishlist');
+      }
+    }
     if (mounted) setState(() => _loading = false);
   }
 
@@ -40,9 +46,16 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
     setState(() => _items.removeAt(index));
     try {
       await WishlistService.toggle(id);
-    } catch (_) {
-      // Restore if failed
+      if (mounted) {
+        final isAr = ref.read(languageProvider).locale == 'ar';
+        AppSnackbar.undo(context, isAr ? 'تم الحذف من المفضلة' : 'Removed from wishlist', () {
+          setState(() => _items.insert(index, removed));
+          WishlistService.toggle(id);
+        });
+      }
+    } catch (e) {
       setState(() => _items.insert(index, removed));
+      if (mounted) AppSnackbar.error(context, e.toString());
     }
   }
 
@@ -188,7 +201,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
           childAspectRatio: 0.72,
         ),
         itemCount: 6,
-        itemBuilder: (_, __) => AppShimmer(
+        itemBuilder: (_, _) => AppShimmer(
           width: double.infinity,
           height: double.infinity,
           borderRadius: BorderRadius.circular(18.r),
@@ -351,9 +364,9 @@ class _WishlistCardState extends State<_WishlistCard>
                       CachedNetworkImage(
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) =>
+                        placeholder: (_, _) =>
                             Container(color: const Color(0xFFF1F5F9)),
-                        errorWidget: (_, __, ___) => Container(
+                        errorWidget: (_, _, _) => Container(
                           color: const Color(0xFFF1F5F9),
                           child: Icon(Icons.image_outlined,
                               size: 30.w, color: AppColors.slate300),

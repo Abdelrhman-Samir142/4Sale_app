@@ -5,10 +5,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/language_provider.dart';
-import '../../services/auctions_service.dart';
+import '../../providers/auctions_provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/widgets/app_shimmer.dart';
 import '../../shared/widgets/app_empty_state.dart';
+import '../../shared/widgets/offline_banner.dart';
 import 'dart:async';
 
 class AuctionsScreen extends ConsumerStatefulWidget {
@@ -20,8 +21,7 @@ class AuctionsScreen extends ConsumerStatefulWidget {
 class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<dynamic> _allAuctions = [];
-  bool _loading = true;
+  late ScrollController _scrollController;
 
   @override
   void initState() {
@@ -30,27 +30,35 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) setState(() {});
     });
-    _fetch();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      ref.read(paginatedAuctionsProvider.notifier).loadMore();
+    }
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetch() async {
-    setState(() => _loading = true);
-    try {
-      _allAuctions = await AuctionsService.list(activeOnly: true);
-    } catch (_) {}
-    if (mounted) setState(() => _loading = false);
-  }
 
-  List<dynamic> get _activeAuctions => _allAuctions;
+  @override
+  Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider);
+    final pState = ref.watch(paginatedAuctionsProvider);
+    final dict = lang.dict;
+    final isAr = lang.locale == 'ar';
 
-  List<dynamic> get _endingSoon {
-    return _allAuctions.where((a) {
+    // Filter displayed list based on selected tab
+    final allItems = pState.items;
+    final endingSoon = allItems.where((a) {
       final endStr = a['end_time'] as String?;
       if (endStr == null) return false;
       try {
@@ -61,73 +69,90 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
         return false;
       }
     }).toList();
-  }
 
-  List<dynamic> get _currentList {
-    switch (_tabController.index) {
-      case 1:
-        return _endingSoon;
-      case 2:
-        return _allAuctions; // placeholder for "My Bids"
-      default:
-        return _activeAuctions;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final lang = ref.watch(languageProvider);
-    final dict = lang.dict;
-    final isAr = lang.locale == 'ar';
+    final currentList = switch (_tabController.index) {
+      1 => endingSoon,
+      2 => allItems, // "My Bids" placeholder
+      _ => allItems,
+    };
 
     return Directionality(
       textDirection: lang.textDirection,
       child: Scaffold(
         backgroundColor: const Color(0xFFFAFBFC),
         body: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              // ── Header ──────────────────────────────────
-              _buildHeader(isAr, dict),
-              // ── Tab Bar ─────────────────────────────────
-              _buildTabBar(isAr),
-              // ── Content ─────────────────────────────────
-              Expanded(
-                child: _loading
-                    ? _buildShimmerList()
-                    : _currentList.isEmpty
-                        ? AppEmptyState(
-                            title: isAr ? 'لا توجد مزادات' : 'No Auctions',
-                            subtitle: isAr
-                                ? 'تابعنا لأحدث المزادات المباشرة'
-                                : 'Check back for live auctions',
-                            icon: Icons.gavel_rounded,
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _fetch,
-                            color: AppColors.auctionOrange,
-                            child: ListView.builder(
-                              padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 100.h),
-                              physics: const BouncingScrollPhysics(
-                                  parent: AlwaysScrollableScrollPhysics()),
-                              itemCount: _currentList.length,
-                              itemBuilder: (_, i) {
-                                return _PremiumAuctionCard(
-                                  auction: _currentList[i],
-                                  dict: dict,
-                                  isAr: isAr,
-                                ).animate()
-                                    .fadeIn(
-                                        delay: Duration(milliseconds: 80 * i),
-                                        duration: 350.ms)
-                                    .slideY(
-                                        begin: 0.08,
-                                        end: 0,
-                                        delay: Duration(milliseconds: 80 * i));
-                              },
-                            ),
-                          ),
+              Column(
+                children: [
+                  // ── Header ──────────────────────────────────
+                  _buildHeader(isAr, dict),
+                  // ── Tab Bar ─────────────────────────────────
+                  _buildTabBar(isAr),
+                  // ── Content ─────────────────────────────────
+                  Expanded(
+                    child: pState.isLoading
+                        ? _buildShimmerList()
+                        : currentList.isEmpty
+                            ? AppEmptyState(
+                                title: isAr ? 'لا توجد مزادات' : 'No Auctions',
+                                subtitle: isAr
+                                    ? 'تابعنا لأحدث المزادات المباشرة'
+                                    : 'Check back for live auctions',
+                                icon: Icons.gavel_rounded,
+                              )
+                            : RefreshIndicator(
+                                onRefresh: () => ref
+                                    .read(paginatedAuctionsProvider.notifier)
+                                    .refresh(),
+                                color: AppColors.auctionOrange,
+                                child: ListView.builder(
+                                  controller: _scrollController,
+                                  padding: EdgeInsets.fromLTRB(
+                                      16.w, 8.h, 16.w, 100.h),
+                                  physics: const BouncingScrollPhysics(
+                                      parent: AlwaysScrollableScrollPhysics()),
+                                  // +1 for load-more footer
+                                  itemCount: currentList.length +
+                                      (pState.hasMore ? 1 : 0),
+                                  itemBuilder: (_, i) {
+                                    // Load-more footer
+                                    if (i == currentList.length) {
+                                      return Padding(
+                                        padding: EdgeInsets.symmetric(
+                                            vertical: 16.h),
+                                        child: Center(
+                                          child: pState.isLoadingMore
+                                              ? const CircularProgressIndicator(
+                                                  color: AppColors.auctionOrange,
+                                                  strokeWidth: 2)
+                                              : const SizedBox.shrink(),
+                                        ),
+                                      );
+                                    }
+                                    return _PremiumAuctionCard(
+                                      auction: currentList[i],
+                                      dict: dict,
+                                      isAr: isAr,
+                                    )
+                                        .animate()
+                                        .fadeIn(
+                                            delay: Duration(
+                                                milliseconds: 80 * i.clamp(0, 5)),
+                                            duration: 350.ms)
+                                        .slideY(
+                                            begin: 0.08,
+                                            end: 0,
+                                            delay: Duration(
+                                                milliseconds:
+                                                    80 * i.clamp(0, 5)));
+                                  },
+                                ),
+                              ),
+                  ),
+                ],
               ),
+              const OfflineBanner(),
             ],
           ),
         ),
@@ -296,7 +321,7 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
     return ListView.builder(
       padding: EdgeInsets.all(16.w),
       itemCount: 4,
-      itemBuilder: (_, __) => Padding(
+      itemBuilder: (_, _) => Padding(
         padding: EdgeInsets.only(bottom: 12.h),
         child: AppShimmer(
           width: double.infinity,
@@ -472,9 +497,9 @@ class _PremiumAuctionCardState extends State<_PremiumAuctionCard>
                         CachedNetworkImage(
                           imageUrl: image,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) =>
+                          placeholder: (_, _) =>
                               Container(color: const Color(0xFFFFF7ED)),
-                          errorWidget: (_, __, ___) => Container(
+                          errorWidget: (_, _, _) => Container(
                             color: const Color(0xFFFFF7ED),
                             child: Icon(Icons.gavel_rounded,
                                 size: 30.w,

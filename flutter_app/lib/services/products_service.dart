@@ -1,12 +1,14 @@
 import 'package:dio/dio.dart';
 import '../core/network/dio_client.dart';
 import '../core/constants/api_constants.dart';
+import '../models/product.dart';
+import '../models/paginated_response.dart';
 
 class ProductsService {
   static final Dio _dio = DioClient.instance;
 
   /// GET /products/ with optional query params
-  static Future<Map<String, dynamic>> list({
+  static Future<PaginatedResponse<Product>> list({
     String? category,
     double? minPrice,
     double? maxPrice,
@@ -27,26 +29,28 @@ class ProductsService {
       if (search != null && search.isNotEmpty) params['search'] = search;
       if (page != null) params['page'] = page;
 
-      final response =
-          await _dio.get(ApiConstants.products, queryParameters: params);
-      return response.data as Map<String, dynamic>;
+      final response = await _dio.get(ApiConstants.products, queryParameters: params);
+      return PaginatedResponse<Product>.fromJson(
+        response.data as Map<String, dynamic>,
+        (json) => Product.fromJson(json as Map<String, dynamic>),
+      );
     } on DioException catch (e) {
       throw Exception(parseDioError(e));
     }
   }
 
   /// GET /products/{id}/
-  static Future<Map<String, dynamic>> get(String id) async {
+  static Future<Product> get(String id) async {
     try {
       final response = await _dio.get(ApiConstants.productDetail(id));
-      return response.data as Map<String, dynamic>;
+      return Product.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw Exception(parseDioError(e));
     }
   }
 
   /// POST /products/ (multipart with images)
-  static Future<Map<String, dynamic>> create({
+  static Future<Product> create({
     required String title,
     required String description,
     required double price,
@@ -66,9 +70,9 @@ class ProductsService {
         'category': category,
         'condition': condition,
         'location': location,
-        if (phoneNumber != null) 'phone_number': phoneNumber,
+        'phone_number': ?phoneNumber,
         'is_auction': isAuction,
-        if (auctionEndTime != null) 'auction_end_time': auctionEndTime,
+        'auction_end_time': ?auctionEndTime,
       });
 
       if (imagePaths != null) {
@@ -85,19 +89,17 @@ class ProductsService {
         data: formData,
         options: Options(contentType: 'multipart/form-data'),
       );
-      return response.data as Map<String, dynamic>;
+      return Product.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw Exception(parseDioError(e));
     }
   }
 
   /// PATCH /products/{id}/
-  static Future<Map<String, dynamic>> update(
-      String id, Map<String, dynamic> data) async {
+  static Future<Product> update(String id, Map<String, dynamic> data) async {
     try {
-      final response =
-          await _dio.patch(ApiConstants.productDetail(id), data: data);
-      return response.data as Map<String, dynamic>;
+      final response = await _dio.patch(ApiConstants.productDetail(id), data: data);
+      return Product.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw Exception(parseDioError(e));
     }
@@ -113,10 +115,11 @@ class ProductsService {
   }
 
   /// GET /products/my_listings/
-  static Future<List<dynamic>> getMyListings() async {
+  static Future<List<Product>> getMyListings() async {
     try {
       final response = await _dio.get(ApiConstants.myListings);
-      return response.data as List<dynamic>;
+      final list = response.data as List<dynamic>;
+      return list.map((e) => Product.fromJson(e as Map<String, dynamic>)).toList();
     } on DioException catch (e) {
       throw Exception(parseDioError(e));
     }

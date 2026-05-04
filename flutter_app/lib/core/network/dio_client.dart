@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import '../constants/api_constants.dart';
 import '../storage/secure_storage.dart';
@@ -27,7 +28,7 @@ class DioClient {
 /// Interceptor that injects the JWT bearer token, handles 401s,
 /// and attempts automatic token refresh.
 class _AuthInterceptor extends Interceptor {
-  bool _isRefreshing = false;
+  Completer<String?>? _refreshCompleter;
 
   @override
   Future<void> onRequest(
@@ -43,52 +44,67 @@ class _AuthInterceptor extends Interceptor {
 
   @override
   Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
-    if (err.response?.statusCode == 401 && !_isRefreshing) {
-      _isRefreshing = true;
-      try {
-        final refreshToken = await SecureStorageService.getRefreshToken();
-        if (refreshToken != null && refreshToken.isNotEmpty) {
-          // Attempt to refresh the access token
-          final refreshDio = Dio(BaseOptions(
-            baseUrl: ApiConstants.baseUrl,
-            connectTimeout: const Duration(seconds: 15),
-            receiveTimeout: const Duration(seconds: 15),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-          ));
-          final response = await refreshDio.post(
-            ApiConstants.refreshToken,
-            data: {'refresh': refreshToken},
-          );
-          final newAccess = response.data['access'] as String;
-          await SecureStorageService.setAccessToken(newAccess);
-          _isRefreshing = false;
-
-          // Retry the original request with the new token
+    if (err.response?.statusCode == 401) {
+      if (_refreshCompleter == null) {
+        _refreshCompleter = Completer<String?>();
+        try {
+          final refreshToken = await SecureStorageService.getRefreshToken();
+          if (refreshToken != null && refreshToken.isNotEmpty) {
+            final refreshDio = Dio(BaseOptions(
+              baseUrl: ApiConstants.baseUrl,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 15),
+              headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            ));
+            final response = await refreshDio.post(
+              ApiConstants.refreshToken,
+              data: {'refresh': refreshToken},
+            );
+            final newAccess = response.data['access'] as String;
+            await SecureStorageService.setAccessToken(newAccess);
+            _refreshCompleter!.complete(newAccess);
+            _refreshCompleter = null;
+            final opts = err.requestOptions;
+            opts.headers['Authorization'] = 'Bearer $newAccess';
+            final retryResponse = await DioClient.instance.fetch(opts);
+            return handler.resolve(retryResponse);
+          } else {
+            // No refresh token available. User logged out or was never logged in.
+            _refreshCompleter!.complete(null);
+            _refreshCompleter = null;
+            final ctx = rootNavigatorKey.currentContext;
+            if (ctx != null && ctx.mounted) {
+              await AuthGuard.performStrictLogout(ctx, showSessionExpired: false);
+            } else {
+              await SecureStorageService.clearTokens();
+            }
+            return handler.next(err);
+          }
+        } catch (_) {
+          // Token refresh failed (e.g. refresh token expired)
+          _refreshCompleter!.complete(null);
+          _refreshCompleter = null;
+          final ctx = rootNavigatorKey.currentContext;
+          if (ctx != null && ctx.mounted) {
+            await AuthGuard.performStrictLogout(ctx, showSessionExpired: true);
+          } else {
+            await SecureStorageService.clearTokens();
+          }
+          return handler.next(err);
+        }
+      } else {
+        final newAccess = await _refreshCompleter!.future;
+        if (newAccess != null) {
           final opts = err.requestOptions;
           opts.headers['Authorization'] = 'Bearer $newAccess';
-          final retryResponse = await DioClient.instance.fetch(opts);
-          return handler.resolve(retryResponse);
+          try {
+            final retryResponse = await DioClient.instance.fetch(opts);
+            return handler.resolve(retryResponse);
+          } catch (retryErr) {
+            if (retryErr is DioException) return handler.next(retryErr);
+          }
         }
-      } catch (_) {
-        // Refresh failed — force global logout immediately
-        _isRefreshing = false;
-        final context = rootNavigatorKey.currentContext;
-        if (context != null) {
-          await AuthGuard.performStrictLogout(context, showSessionExpired: true);
-          return handler.next(err); // Skip proceeding
-        } else {
-          await SecureStorageService.clearTokens();
-        }
-      }
-      
-      // If no refresh token existed in the first place or we fall through
-      _isRefreshing = false;
-      final ctx = rootNavigatorKey.currentContext;
-      if (ctx != null) {
-         await AuthGuard.performStrictLogout(ctx, showSessionExpired: true);
+        return handler.next(err);
       }
     }
     handler.next(err);

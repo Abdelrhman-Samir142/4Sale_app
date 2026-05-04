@@ -1,20 +1,28 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/language_provider.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import '../../core/constants/app_colors.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/language_provider.dart';
+import '../../core/utils/app_snackbar.dart';
+
+// ── Clean Premium Light Theme ──────────────────────────────────────
+const Color _bgLight = Color(0xFFF7F9FC);
+const Color _primaryTeal = Color(0xFF0F766E);
+const Color _textDark = Color(0xFF1E212B);
+const Color _textGrey = Color(0xFF9FA6B2);
+const Color _surfaceWhite = Colors.white;
+const Color _borderLight = Color(0xFFE5E7EB);
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
-
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderStateMixin {
   final _usernameC = TextEditingController();
   final _passwordC = TextEditingController();
   bool _obscure = true;
@@ -23,51 +31,54 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _usernameError;
   String? _passwordError;
 
-  final _usernameFocus = FocusNode();
-  final _passwordFocus = FocusNode();
+  late AnimationController _bgCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _bgCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat(reverse: true);
+  }
 
   @override
   void dispose() {
     _usernameC.dispose();
     _passwordC.dispose();
-    _usernameFocus.dispose();
-    _passwordFocus.dispose();
+    _bgCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     bool isValid = true;
-    final reqMsg =
-        ref.read(languageProvider).locale == 'ar' ? 'مطلوب' : 'Required';
+    final reqMsg = ref.read(languageProvider).locale == 'ar' ? 'مطلوب' : 'Required';
+    
     if (_usernameC.text.trim().isEmpty) {
       _usernameError = reqMsg;
       isValid = false;
     } else {
       _usernameError = null;
     }
-    if (_passwordC.text.isEmpty) {
+
+    if (_passwordC.text.trim().isEmpty) {
       _passwordError = reqMsg;
       isValid = false;
     } else {
       _passwordError = null;
     }
-    if (mounted) setState(() {});
 
-    if (!isValid) return;
+    if (!isValid) {
+      setState(() {});
+      return;
+    }
 
-    if (mounted) setState(() { _loading = true; _error = null; });
+    setState(() { _loading = true; _error = null; });
     try {
       await ref.read(authProvider.notifier).login(
-            _usernameC.text.trim(),
-            _passwordC.text,
-          );
-      // Router redirect handles navigation automatically when auth state changes
+        _usernameC.text.trim(),
+        _passwordC.text.trim(),
+      );
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-        });
-      }
+      if (mounted) setState(() => _error = e.toString());
+      if (mounted) AppSnackbar.error(context, e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -76,617 +87,403 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(languageProvider);
-    final dict = lang.dict['login'] as Map<String, dynamic>;
-    final theme = Theme.of(context);
-    final size = MediaQuery.of(context).size;
+    final isAr = lang.locale == 'ar';
 
     return Directionality(
       textDirection: lang.textDirection,
       child: Scaffold(
-        backgroundColor: Colors.white,
-        body: SingleChildScrollView(
-          child: Column(
-            children: [
-              // ── Gradient Header Wave ─────────────────────────
-              _buildHeaderWave(size, dict, theme),
-
-              // ── Form Body ────────────────────────────────────
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24.w),
-                child: Column(
-                  children: [
-                    SizedBox(height: 28.h),
-
-                    // ── Error Banner ───────────────────────────
-                    if (_error != null)
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(
-                            horizontal: 16.w, vertical: 12.h),
-                        margin: EdgeInsets.only(bottom: 20.h),
-                        decoration: BoxDecoration(
-                          color: AppColors.errorRed.withAlpha(15),
-                          borderRadius: BorderRadius.circular(14.r),
-                          border: Border.all(
-                              color: AppColors.errorRed.withAlpha(60)),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.error_outline,
-                                color: AppColors.errorRed, size: 20.w),
-                            SizedBox(width: 10.w),
-                            Expanded(
-                              child: Text(_error!,
-                                  style: TextStyle(
-                                    color: AppColors.errorRed,
-                                    fontSize: 13.sp,
-                                    fontWeight: FontWeight.w500,
-                                  )),
-                            ),
-                          ],
-                        ),
-                      )
-                          .animate()
-                          .fadeIn(duration: 300.ms)
-                          .shakeX(hz: 3, amount: 4, duration: 400.ms),
-
-                    // ── Username / Email Field ─────────────────
-                    _PremiumTextField(
-                      controller: _usernameC,
-                      focusNode: _usernameFocus,
-                      hintText: dict['email'] as String,
-                      prefixIcon: Icons.person_outline_rounded,
-                      errorText: _usernameError,
-                      textInputAction: TextInputAction.next,
-                      onSubmitted: (_) =>
-                          FocusScope.of(context).requestFocus(_passwordFocus),
-                    )
-                        .animate()
-                        .fadeIn(delay: 400.ms, duration: 400.ms)
-                        .slideY(begin: 0.15),
-                    SizedBox(height: 16.h),
-
-                    // ── Password Field ─────────────────────────
-                    _PremiumTextField(
-                      controller: _passwordC,
-                      focusNode: _passwordFocus,
-                      hintText: dict['password'] as String,
-                      prefixIcon: Icons.lock_outline_rounded,
-                      errorText: _passwordError,
-                      obscureText: _obscure,
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _submit(),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscure
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          color: AppColors.slate400,
-                          size: 20.w,
-                        ),
-                        onPressed: () =>
-                            setState(() => _obscure = !_obscure),
+        backgroundColor: _bgLight,
+        resizeToAvoidBottomInset: true,
+        body: Stack(
+          children: [
+            _buildAnimatedBg(),
+            SafeArea(
+              child: CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24.w),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(height: 50.h),
+                          _buildHeader(isAr),
+                          SizedBox(height: 50.h),
+                          _buildLoginForm(isAr),
+                          SizedBox(height: 40.h),
+                        ],
                       ),
-                    )
-                        .animate()
-                        .fadeIn(delay: 500.ms, duration: 400.ms)
-                        .slideY(begin: 0.15),
-
-                    // ── Forgot Password ────────────────────────
-                    Align(
-                      alignment: lang.locale == 'ar'
-                          ? Alignment.centerLeft
-                          : Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () {},
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.symmetric(
-                              vertical: 8.h, horizontal: 4.w),
-                        ),
-                        child: Text(
-                          dict['forgotPassword'] as String,
-                          style: TextStyle(
-                            color: AppColors.slate500,
-                            fontSize: 13.sp,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    )
-                        .animate()
-                        .fadeIn(delay: 550.ms, duration: 400.ms),
-
-                    SizedBox(height: 8.h),
-
-                    // ── Login Button (Gradient) ────────────────
-                    _GradientButton(
-                      text: dict['submit'] as String,
-                      isLoading: _loading,
-                      onPressed: _submit,
-                    )
-                        .animate()
-                        .fadeIn(delay: 600.ms, duration: 400.ms)
-                        .slideY(begin: 0.15),
-
-                    SizedBox(height: 24.h),
-
-                    // ── Divider ────────────────────────────────
-                    Row(
-                      children: [
-                        Expanded(
-                            child: Divider(
-                                color: AppColors.slate200, thickness: 1)),
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 16.w),
-                          child: Text(
-                            lang.locale == 'ar' ? 'أو' : 'or',
-                            style: TextStyle(
-                              color: AppColors.slate400,
-                              fontSize: 13.sp,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                            child: Divider(
-                                color: AppColors.slate200, thickness: 1)),
-                      ],
-                    )
-                        .animate()
-                        .fadeIn(delay: 700.ms, duration: 400.ms),
-
-                    SizedBox(height: 24.h),
-
-                    // ── Register Link ──────────────────────────
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          dict['noAccount'] as String,
-                          style: TextStyle(
-                            color: AppColors.slate500,
-                            fontSize: 14.sp,
-                          ),
-                        ),
-                        SizedBox(width: 4.w),
-                        GestureDetector(
-                          onTap: () => context.go('/register'),
-                          child: Text(
-                            dict['createAccount'] as String,
-                            style: TextStyle(
-                              color: AppColors.primary600,
-                              fontSize: 14.sp,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                        .animate()
-                        .fadeIn(delay: 800.ms, duration: 400.ms),
-                    SizedBox(height: 40.h),
-                  ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_loading)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.white54,
+                  child: Center(
+                    child: CircularProgressIndicator(color: _primaryTeal).animate().scale(curve: Curves.easeOutBack),
+                  ),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // ── HEADER WAVE WITH LOGO ─────────────────────────────────────
-  // ═══════════════════════════════════════════════════════════════
-  Widget _buildHeaderWave(
-      Size size, Map<String, dynamic> dict, ThemeData theme) {
-    return Stack(
-      clipBehavior: Clip.none,
-      alignment: Alignment.bottomCenter,
-      children: [
-        // Background gradient wave
-        Container(
-          width: size.width,
-          height: 280.h,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                AppColors.primary600.withAlpha(20),
-                AppColors.primary400.withAlpha(10),
-                Colors.white,
-              ],
-              stops: const [0.0, 0.6, 1.0],
-            ),
-          ),
-        ),
-
-        // Decorative circles
-        Positioned(
-          top: -40.h,
-          right: -30.w,
-          child: Container(
-            width: 160.w,
-            height: 160.w,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.primary500.withAlpha(8),
-            ),
-          ),
-        ),
-        Positioned(
-          top: 20.h,
-          left: -50.w,
-          child: Container(
-            width: 120.w,
-            height: 120.w,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.primary500.withAlpha(6),
-            ),
-          ),
-        ),
-
-        // Back button (top-left)
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 8.h,
-          left: 8.w,
-          child: IconButton(
-            onPressed: () {
-              if (context.canPop()) {
-                context.pop();
-              }
-            },
-            icon: Container(
-              padding: EdgeInsets.all(8.w),
-              decoration: BoxDecoration(
-                color: Colors.white.withAlpha(200),
-                borderRadius: BorderRadius.circular(12.r),
+  Widget _buildAnimatedBg() {
+    return AnimatedBuilder(
+      animation: _bgCtrl,
+      builder: (_, _) {
+        return Stack(
+          children: [
+            Container(color: _bgLight),
+            Positioned(
+              top: -100.h + (30 * _bgCtrl.value),
+              left: -50.w - (20 * _bgCtrl.value),
+              child: Container(
+                width: 400.w, height: 400.h,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [_primaryTeal.withAlpha(12), Colors.transparent]),
+                ),
               ),
-              child: Icon(Icons.arrow_back_rounded,
-                  color: AppColors.slate700, size: 20.w),
             ),
-          ),
-        ).animate().fadeIn(delay: 100.ms),
-
-        // Logo + Title column
-        Positioned(
-          bottom: -40.h,
-          child: Column(
-            children: [
-              // Logo Card with shadow
-              Hero(
-                tag: 'app-logo',
-                child: Container(
-                  width: 100.w,
-                  height: 100.w,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24.r),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary600.withAlpha(25),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withAlpha(8),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16.r),
-                    child: Image.asset(
-                      'assets/images/logo.png',
-                      width: 72.w,
-                      height: 72.w,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
+            Positioned(
+              bottom: -100.h - (20 * _bgCtrl.value),
+              right: -50.w + (30 * _bgCtrl.value),
+              child: Container(
+                width: 350.w, height: 350.h,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [const Color(0xFF1E212B).withAlpha(8), Colors.transparent]),
                 ),
-              )
-                  .animate()
-                  .scale(
-                      delay: 200.ms,
-                      duration: 500.ms,
-                      begin: const Offset(0.6, 0.6),
-                      curve: Curves.elasticOut)
-                  .fadeIn(delay: 200.ms, duration: 300.ms),
-
-              SizedBox(height: 12.h),
-
-              // App Name
-              Text(
-                '4Sale',
-                style: TextStyle(
-                  fontSize: 28.sp,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.primary700,
-                  letterSpacing: -0.5,
-                ),
-              ).animate().fadeIn(delay: 350.ms).slideY(begin: 0.3),
-
-              SizedBox(height: 4.h),
-
-              // Tagline
-              Text(
-                ref.watch(languageProvider).locale == 'ar'
-                    ? 'اشتري وبيع أي حاجة'
-                    : 'Buy & Sell Anything',
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  color: AppColors.slate400,
-                  fontWeight: FontWeight.w500,
-                ),
-              ).animate().fadeIn(delay: 450.ms),
-            ],
-          ),
-        ),
-      ],
+              ),
+            ),
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
+              child: Container(color: Colors.transparent),
+            ),
+          ],
+        );
+      },
     );
   }
-}
 
-// ═══════════════════════════════════════════════════════════════════
-// ── PREMIUM TEXT FIELD ──────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════
-class _PremiumTextField extends StatefulWidget {
-  final TextEditingController controller;
-  final FocusNode? focusNode;
-  final String hintText;
-  final IconData prefixIcon;
-  final String? errorText;
-  final bool obscureText;
-  final Widget? suffixIcon;
-  final TextInputAction? textInputAction;
-  final ValueChanged<String>? onSubmitted;
-  final TextInputType keyboardType;
-
-  const _PremiumTextField({
-    required this.controller,
-    this.focusNode,
-    required this.hintText,
-    required this.prefixIcon,
-    this.errorText,
-    this.obscureText = false,
-    this.suffixIcon,
-    this.textInputAction,
-    this.onSubmitted,
-    this.keyboardType = TextInputType.text,
-  });
-
-  @override
-  State<_PremiumTextField> createState() => _PremiumTextFieldState();
-}
-
-class _PremiumTextFieldState extends State<_PremiumTextField> {
-  late FocusNode _focusNode;
-  bool _hasFocus = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode = widget.focusNode ?? FocusNode();
-    _focusNode.addListener(_onFocusChanged);
-  }
-
-  void _onFocusChanged() {
-    if (mounted) setState(() => _hasFocus = _focusNode.hasFocus);
-  }
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_onFocusChanged);
-    if (widget.focusNode == null) _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hasError = widget.errorText != null && widget.errorText!.isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+  Widget _buildOfficialLogo() {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 60.w,
+          height: 60.w,
           decoration: BoxDecoration(
-            color: _hasFocus
-                ? Colors.white
-                : const Color(0xFFF8F9FA),
-            borderRadius: BorderRadius.circular(14.r),
-            border: Border.all(
-              color: hasError
-                  ? AppColors.errorRed
-                  : _hasFocus
-                      ? AppColors.primary600
-                      : const Color(0xFFE8ECF0),
-              width: _hasFocus || hasError ? 1.8 : 1.2,
-            ),
-            boxShadow: _hasFocus && !hasError
-                ? [
-                    BoxShadow(
-                      color: AppColors.primary600.withAlpha(15),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    )
-                  ]
-                : [],
-          ),
-          child: TextField(
-            controller: widget.controller,
-            focusNode: _focusNode,
-            obscureText: widget.obscureText,
-            textInputAction: widget.textInputAction,
-            onSubmitted: widget.onSubmitted,
-            keyboardType: widget.keyboardType,
-            style: TextStyle(
-              fontSize: 15.sp,
-              color: AppColors.slate800,
-              fontWeight: FontWeight.w500,
-            ),
-            decoration: InputDecoration(
-              hintText: widget.hintText,
-              hintStyle: TextStyle(
-                fontSize: 14.sp,
-                color: AppColors.slate400,
-                fontWeight: FontWeight.w400,
-              ),
-              prefixIcon: Container(
-                margin: EdgeInsets.only(left: 12.w, right: 8.w),
-                child: Icon(
-                  widget.prefixIcon,
-                  color: _hasFocus
-                      ? AppColors.primary600
-                      : AppColors.slate400,
-                  size: 22.w,
-                ),
-              ),
-              prefixIconConstraints: BoxConstraints(
-                minWidth: 44.w,
-                minHeight: 44.h,
-              ),
-              suffixIcon: widget.suffixIcon,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: 16.w,
-                vertical: 16.h,
-              ),
-            ),
-          ),
-        ),
-        if (hasError) ...[
-          SizedBox(height: 6.h),
-          Padding(
-            padding: EdgeInsets.only(left: 14.w),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline,
-                    size: 14.w, color: AppColors.errorRed),
-                SizedBox(width: 4.w),
-                Text(
-                  widget.errorText!,
-                  style: TextStyle(
-                    color: AppColors.errorRed,
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          )
-              .animate(key: ValueKey(widget.errorText))
-              .fadeIn(duration: 200.ms)
-              .slideY(begin: -0.3),
-        ],
-      ],
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── GRADIENT BUTTON ─────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════
-class _GradientButton extends StatefulWidget {
-  final String text;
-  final bool isLoading;
-  final VoidCallback onPressed;
-
-  const _GradientButton({
-    required this.text,
-    this.isLoading = false,
-    required this.onPressed,
-  });
-
-  @override
-  State<_GradientButton> createState() => _GradientButtonState();
-}
-
-class _GradientButtonState extends State<_GradientButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _scaleCtrl;
-  late Animation<double> _scaleAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _scaleCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 100));
-    _scaleAnim = Tween<double>(begin: 1.0, end: 0.97)
-        .animate(CurvedAnimation(parent: _scaleCtrl, curve: Curves.easeInOut));
-  }
-
-  @override
-  void dispose() {
-    _scaleCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scaleAnim,
-      child: GestureDetector(
-        onTapDown: (_) => _scaleCtrl.forward(),
-        onTapUp: (_) {
-          _scaleCtrl.reverse();
-          if (!widget.isLoading) widget.onPressed();
-        },
-        onTapCancel: () => _scaleCtrl.reverse(),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: double.infinity,
-          height: 54.h,
-          decoration: BoxDecoration(
-            gradient: widget.isLoading
-                ? LinearGradient(colors: [
-                    AppColors.primary600.withAlpha(180),
-                    AppColors.primary500.withAlpha(180),
-                  ])
-                : const LinearGradient(
-                    colors: [
-                      AppColors.primary700,
-                      AppColors.primary500,
-                    ],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-            borderRadius: BorderRadius.circular(14.r),
+            color: _primaryTeal,
+            borderRadius: BorderRadius.circular(18.r),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary600.withAlpha(50),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              ),
+                color: _primaryTeal.withAlpha(50),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              )
             ],
           ),
           child: Center(
-            child: widget.isLoading
-                ? SizedBox(
-                    width: 22.w,
-                    height: 22.w,
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                    ),
-                  )
-                : Text(
-                    widget.text,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
+            child: Text(
+              '4',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 34.sp,
+                fontWeight: FontWeight.w900,
+                height: 1.1,
+              ),
+            ),
+          ),
+        ),
+        SizedBox(width: 14.w),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Sale',
+              style: TextStyle(
+                color: _textDark,
+                fontSize: 34.sp,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -1,
+                height: 1.1,
+              ),
+            ),
+            Text(
+              'MARKETPLACE',
+              style: TextStyle(
+                color: _textGrey,
+                fontSize: 12.sp,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+                height: 1.1,
+              ),
+            ),
+          ],
+        ),
+      ],
+    )).animate().fadeIn(duration: 600.ms).slideY(begin: 0.2);
+  }
+
+  Widget _buildHeader(bool isAr) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _buildOfficialLogo(),
+        SizedBox(height: 36.h),
+        Text(
+          isAr ? 'مرحباً بعودتك' : 'Welcome back',
+          style: TextStyle(fontSize: 30.sp, fontWeight: FontWeight.w900, color: _textDark, letterSpacing: -0.5),
+          textAlign: TextAlign.center,
+        ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.2),
+        SizedBox(height: 8.h),
+        Text(
+          isAr ? 'سجل الدخول لمواصلة التسوق وتصفح العروض' : 'Sign in to continue shopping and exploring',
+          style: TextStyle(fontSize: 15.sp, color: _textGrey, height: 1.5, fontWeight: FontWeight.w500),
+          textAlign: TextAlign.center,
+        ).animate().fadeIn(delay: 200.ms),
+      ],
+    );
+  }
+
+  Widget _buildLoginForm(bool isAr) {
+    return Container(
+      padding: EdgeInsets.all(28.w),
+      decoration: BoxDecoration(
+        color: _surfaceWhite,
+        borderRadius: BorderRadius.circular(32.r),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 40, offset: const Offset(0, 20)),
+        ],
+      ),
+      child: Column(
+        children: [
+          if (_error != null)
+            Container(
+              padding: EdgeInsets.all(12.w),
+              margin: EdgeInsets.only(bottom: 16.h),
+              decoration: BoxDecoration(
+                color: Colors.red.withAlpha(20),
+                borderRadius: BorderRadius.circular(12.r),
+                border: Border.all(color: Colors.red.withAlpha(50)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.redAccent, size: 20.w),
+                  SizedBox(width: 8.w),
+                  Expanded(child: Text(_error!, style: TextStyle(color: Colors.redAccent, fontSize: 13.sp))),
+                ],
+              ),
+            ).animate().shakeX(),
+
+          _CleanField(
+            controller: _usernameC,
+            labelText: isAr ? 'اسم المستخدم' : 'Username',
+            icon: Icons.person_outline_rounded,
+            errorText: _usernameError,
+          ).animate().fadeIn(delay: 300.ms).slideX(),
+          
+          SizedBox(height: 20.h),
+          
+          _CleanField(
+            controller: _passwordC,
+            labelText: isAr ? 'كلمة المرور' : 'Password',
+            icon: Icons.lock_outline_rounded,
+            obscureText: _obscure,
+            errorText: _passwordError,
+            suffix: IconButton(
+              icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: _textGrey),
+              onPressed: () => setState(() => _obscure = !_obscure),
+            ),
+          ).animate().fadeIn(delay: 400.ms).slideX(),
+
+          SizedBox(height: 16.h),
+          Align(
+            alignment: isAr ? Alignment.centerLeft : Alignment.centerRight,
+            child: TextButton(
+              onPressed: () {},
+              style: TextButton.styleFrom(
+                foregroundColor: _primaryTeal,
+                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+              ),
+              child: Text(
+                isAr ? 'نسيت كلمة المرور؟' : 'Forgot password?',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp),
+              ),
+            ),
+          ).animate().fadeIn(delay: 500.ms),
+
+          SizedBox(height: 24.h),
+          _PrimaryBtn(
+            text: isAr ? 'تسجيل الدخول' : 'Sign In',
+            onTap: _submit,
+          ).animate().fadeIn(delay: 600.ms).scale(),
+
+          SizedBox(height: 32.h),
+
+          // Divider
+          Row(
+            children: [
+              Expanded(child: Divider(color: _borderLight, thickness: 1)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.w),
+                child: Text(
+                  isAr ? 'أو' : 'OR',
+                  style: TextStyle(color: _textGrey, fontSize: 14.sp, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Expanded(child: Divider(color: _borderLight, thickness: 1)),
+            ],
+          ).animate().fadeIn(delay: 700.ms),
+
+          SizedBox(height: 32.h),
+
+          // Register Link
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                isAr ? 'ليس لديك حساب؟ ' : 'Don\'t have an account? ',
+                style: TextStyle(color: _textGrey, fontSize: 15.sp, fontWeight: FontWeight.w500),
+              ),
+              GestureDetector(
+                onTap: () => context.push('/register'),
+                child: Text(
+                  isAr ? 'سجل الآن' : 'Sign up',
+                  style: TextStyle(color: _primaryTeal, fontWeight: FontWeight.bold, fontSize: 15.sp),
+                ),
+              ),
+            ],
+          ).animate().fadeIn(delay: 800.ms),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ── CLEAN FIELD ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+class _CleanField extends StatefulWidget {
+  final TextEditingController controller;
+  final String labelText;
+  final IconData icon;
+  final bool obscureText;
+  final Widget? suffix;
+  final String? errorText;
+
+  const _CleanField({
+    required this.controller,
+    required this.labelText,
+    required this.icon,
+    this.obscureText = false,
+    this.suffix,
+    this.errorText,
+  });
+
+  @override
+  State<_CleanField> createState() => _CleanFieldState();
+}
+
+class _CleanFieldState extends State<_CleanField> {
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Focus(
+          onFocusChange: (v) => setState(() => _isFocused = v),
+          child: AnimatedContainer(
+            duration: 200.ms,
+            decoration: BoxDecoration(
+              color: _surfaceWhite,
+              borderRadius: BorderRadius.circular(16.r),
+              border: Border.all(
+                color: _isFocused ? _primaryTeal : _borderLight,
+                width: _isFocused ? 1.5 : 1,
+              ),
+              boxShadow: _isFocused
+                  ? [BoxShadow(color: _primaryTeal.withAlpha(20), blurRadius: 12, spreadRadius: 2)]
+                  : [BoxShadow(color: Colors.black.withAlpha(3), blurRadius: 10, offset: const Offset(0, 4))],
+            ),
+            child: TextFormField(
+              controller: widget.controller,
+              obscureText: widget.obscureText,
+              style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                labelText: widget.labelText,
+                labelStyle: TextStyle(
+                  color: _isFocused ? _primaryTeal : _textGrey,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15.sp,
+                ),
+                floatingLabelStyle: TextStyle(
+                  color: _primaryTeal,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.sp,
+                ),
+                prefixIcon: Icon(widget.icon, color: _isFocused ? _primaryTeal : _textGrey),
+                suffixIcon: widget.suffix,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 16.w),
+              ),
+            ),
+          ),
+        ),
+        if (widget.errorText != null)
+          Padding(
+            padding: EdgeInsets.only(top: 8.h, left: 12.w, right: 12.w),
+            child: Text(widget.errorText!, style: TextStyle(color: Colors.redAccent, fontSize: 12.sp)),
+          ).animate().fadeIn(),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ── PRIMARY BUTTON ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+class _PrimaryBtn extends StatelessWidget {
+  final String text;
+  final VoidCallback onTap;
+
+  const _PrimaryBtn({required this.text, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(vertical: 18.h),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16.r),
+          color: _primaryTeal,
+          boxShadow: [
+            BoxShadow(color: _primaryTeal.withAlpha(60), blurRadius: 20, offset: const Offset(0, 8)),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(color: Colors.white, fontSize: 18.sp, fontWeight: FontWeight.bold, letterSpacing: 1),
           ),
         ),
       ),
-    );
+    ).animate(onPlay: (ctrl) => ctrl.repeat(reverse: true)).shimmer(duration: 2.seconds, color: Colors.white24);
   }
 }

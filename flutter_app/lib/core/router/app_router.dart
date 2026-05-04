@@ -12,6 +12,7 @@ import '../../screens/product/product_detail_screen.dart';
 import '../../screens/sell/sell_screen.dart';
 import '../../screens/auctions/auctions_screen.dart';
 import '../../screens/profile/profile_screen.dart';
+import '../../screens/profile/edit_profile_screen.dart';
 import '../../screens/wishlist/wishlist_screen.dart';
 import '../../screens/messages/conversations_screen.dart';
 import '../../screens/messages/chat_screen.dart';
@@ -20,6 +21,7 @@ import '../../screens/search/smart_search_screen.dart';
 import '../../screens/notifications/notifications_screen.dart';
 import '../../screens/settings/settings_screen.dart';
 import '../../screens/admin/admin_dashboard_screen.dart';
+import '../../screens/store/store_screen.dart';
 import '../../screens/shell_screen.dart';
 
 // Helper for SlideUp Transition
@@ -56,7 +58,7 @@ CustomTransitionPage _buildFadeTransition(Widget child, LocalKey key) {
 /// GoRouter can re-evaluate its redirect without being recreated.
 class _AuthChangeNotifier extends ChangeNotifier {
   _AuthChangeNotifier(Ref ref) {
-    ref.listen<AuthState>(authProvider, (_, __) {
+    ref.listen<AuthState>(authProvider, (_, _) {
       notifyListeners();
     });
   }
@@ -225,6 +227,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/admin',
         name: 'admin',
         builder: (context, state) => const AdminDashboardScreen(),
+      ),
+      GoRoute(
+        path: '/edit-profile',
+        name: 'editProfile',
+        pageBuilder: (context, state) => _buildSlideUpTransition(
+          const EditProfileScreen(),
+          state.pageKey,
+        ),
+      ),
+      GoRoute(
+        path: '/store',
+        name: 'store',
+        pageBuilder: (context, state) => _buildSlideUpTransition(
+          const StoreScreen(),
+          state.pageKey,
+        ),
       ),
     ],
   );

@@ -8,6 +8,7 @@ import '../../providers/language_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/products_service.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/app_snackbar.dart';
 import '../../shared/widgets/app_shimmer.dart';
 import '../../core/auth/auth_guard.dart';
 
@@ -41,7 +42,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   Future<void> _fetchListings() async {
     try {
       _listings = await ProductsService.getMyListings();
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        final isAr = ref.read(languageProvider).locale == 'ar';
+        AppSnackbar.error(context, isAr ? 'فشل تحميل الإعلانات' : 'Failed to load listings');
+      }
+    }
     if (mounted) setState(() => _loadingListings = false);
   }
 
@@ -126,7 +132,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         // Background
         AnimatedBuilder(
           animation: _headerCtrl,
-          builder: (_, __) {
+          builder: (_, _) {
             return Container(
               height: 280.h,
               width: double.infinity,
@@ -287,7 +293,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           SizedBox(height: 8.h),
                           // Edit profile chip
                           GestureDetector(
-                            onTap: () {},
+                            onTap: () => context.push('/edit-profile'),
                             child: Container(
                               padding: EdgeInsets.symmetric(
                                   horizontal: 12.w, vertical: 5.h),
@@ -525,7 +531,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               onTap: () async {
                 HapticFeedback.mediumImpact();
                 await ref.read(authProvider.notifier).logout();
-                if (context.mounted) {
+                if (mounted) {
                   await AuthGuard.performStrictLogout(context);
                 }
               },

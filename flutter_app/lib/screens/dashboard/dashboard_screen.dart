@@ -12,8 +12,9 @@ import '../../core/constants/app_colors.dart';
 import '../../shared/widgets/app_shimmer.dart';
 import '../../shared/widgets/app_empty_state.dart';
 import '../../shared/widgets/app_error_state.dart';
-import '../../services/products_service.dart';
 import '../../services/wishlist_service.dart';
+import '../../services/products_service.dart';
+import '../../models/product.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -22,7 +23,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  List<dynamic> _products = [];
+  List<Product> _products = [];
   Set<int> _wishlistIds = {};
   bool _loading = true;
   String? _error;
@@ -67,7 +68,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         search: _searchC.text.isNotEmpty ? _searchC.text : null,
         category: _categoryFilter.isNotEmpty ? _categoryFilter : null,
       );
-      setState(() { _products = (res['results'] as List?) ?? []; _loading = false; });
+      setState(() { _products = res.results; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
     }
@@ -153,10 +154,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                           child: FadeInAnimation(
                                             child: _ProductCard(
                                               product: p,
-                                              isWishlisted: _wishlistIds.contains(p['id'] as int),
-                                              isOwner: auth.userId == p['owner_id'],
+                                              isWishlisted: _wishlistIds.contains(p.id),
+                                              isOwner: auth.userId == p.seller?.id,
                                               isLoggedIn: auth.isLoggedIn,
-                                              onWishlistToggle: () => _toggleWishlist(p['id'] as int),
+                                              onWishlistToggle: () => _toggleWishlist(p.id),
                                               currency: lang.dict['currency'] as String,
                                               locale: lang.locale,
                                             ),
@@ -304,7 +305,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.symmetric(horizontal: 16.w),
         itemCount: cats.length,
-        separatorBuilder: (_, __) => SizedBox(width: 8.w),
+        separatorBuilder: (_, _) => SizedBox(width: 8.w),
         itemBuilder: (_, i) {
           final key = cats.keys.elementAt(i);
           final label = cats.values.elementAt(i);
@@ -353,7 +354,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         crossAxisCount: 2, mainAxisSpacing: 14.h, crossAxisSpacing: 14.w, childAspectRatio: 0.68,
       ),
       itemCount: 6,
-      itemBuilder: (_, __) => Container(
+      itemBuilder: (_, _) => Container(
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16.r),
@@ -368,7 +369,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 // ── PRODUCT CARD ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 class _ProductCard extends StatefulWidget {
-  final dynamic product;
+  final Product product;
   final bool isWishlisted;
   final bool isOwner;
   final bool isLoggedIn;
@@ -408,12 +409,12 @@ class _ProductCardState extends State<_ProductCard> with SingleTickerProviderSta
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = widget.product['primary_image'] as String?;
-    final title = widget.product['title'] as String? ?? '';
-    final price = widget.product['price']?.toString() ?? '0';
-    final isAuction = widget.product['is_auction'] == true;
-    final id = widget.product['id'].toString();
-    final location = widget.product['location'] as String?;
+    final imageUrl = widget.product.primaryImage;
+    final title = widget.product.title;
+    final price = widget.product.price;
+    final isAuction = widget.product.isAuction;
+    final id = widget.product.id.toString();
+    final location = widget.product.location;
 
     return GestureDetector(
       onTapDown: (_) => _controller.forward(),
@@ -440,13 +441,13 @@ class _ProductCardState extends State<_ProductCard> with SingleTickerProviderSta
                   fit: StackFit.expand,
                   children: [
                     Hero(
-                      tag: 'product-image-${widget.product['id']}',
+                      tag: 'product-image-${widget.product.id}',
                       child: imageUrl != null
                           ? CachedNetworkImage(
                               imageUrl: imageUrl,
                               fit: BoxFit.cover,
-                              placeholder: (_, __) => Container(color: const Color(0xFFF3F4F6)),
-                              errorWidget: (_, __, ___) => Container(
+                              placeholder: (_, _) => Container(color: const Color(0xFFF3F4F6)),
+                              errorWidget: (_, _, _) => Container(
                                 color: const Color(0xFFF3F4F6),
                                 child: const Icon(Icons.image_not_supported_outlined, color: Color(0xFF9CA3AF)),
                               ),
@@ -518,7 +519,7 @@ class _ProductCardState extends State<_ProductCard> with SingleTickerProviderSta
                         '${double.tryParse(price)?.toStringAsFixed(0) ?? price} ${widget.currency}',
                         style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w800, color: AppColors.primary700),
                       ),
-                      if (location != null && location.isNotEmpty) ...[
+                      if (location.isNotEmpty) ...[
                         SizedBox(height: 2.h),
                         Row(children: [
                           Icon(Icons.location_on_outlined, size: 12.w, color: AppColors.slate400),

@@ -6,14 +6,14 @@ class AuctionsService {
   static final Dio _dio = DioClient.instance;
 
   /// GET /auctions/
-  static Future<List<dynamic>> list({bool activeOnly = false}) async {
+  static Future<dynamic> list({bool activeOnly = false, int? page}) async {
     try {
       final params = <String, dynamic>{};
       if (activeOnly) params['active_only'] = 'true';
+      if (page != null) params['page'] = page;
       final response =
           await _dio.get(ApiConstants.auctions, queryParameters: params);
-      final data = response.data;
-      return data is List ? data : (data['results'] as List? ?? []);
+      return response.data;
     } on DioException catch (e) {
       throw Exception(parseDioError(e));
     }

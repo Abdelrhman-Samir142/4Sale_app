@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/language_provider.dart';
 import '../../services/rag_service.dart';
+import '../../services/products_service.dart';
+import '../../models/product.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/widgets/app_shimmer.dart';
 import 'dart:math' as math;
@@ -21,7 +24,10 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
   final _queryC = TextEditingController();
   final _focusNode = FocusNode();
   Map<String, dynamic>? _result;
+  // Real product objects fetched after RAG returns IDs
+  List<Product> _products = [];
   bool _loading = false;
+  bool _loadingProducts = false;
   String? _error;
   late AnimationController _brainCtrl;
   late AnimationController _waveCtrl;
@@ -48,11 +54,13 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
   void initState() {
     super.initState();
     _brainCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 8))
-      ..repeat();
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    )..repeat();
     _waveCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 2500))
-      ..repeat(reverse: true);
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    )..repeat(reverse: true);
   }
 
   @override
@@ -74,9 +82,27 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
       _loading = true;
       _error = null;
       _result = null;
+      _products = [];
     });
     try {
       _result = await RagService.query(q);
+      // Fetch full product details for each returned ID
+      final ids = (_result?['answer']?['items'] as List?) ?? [];
+      if (ids.isNotEmpty) {
+        setState(() => _loadingProducts = true);
+        final fetched = <Product>[];
+        for (final id in ids) {
+          try {
+            final p = await ProductsService.get(id.toString());
+            fetched.add(p);
+          } catch (_) {}
+        }
+        if (mounted)
+          setState(() {
+            _products = fetched;
+            _loadingProducts = false;
+          });
+      }
     } catch (e) {
       _error = e.toString();
     }
@@ -97,16 +123,14 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
         body: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            // ── Hero Header ────────────────────────────
+            // ------------------------- Hero Header -------------------------
             SliverToBoxAdapter(child: _buildHero(dict, isAr)),
-            // ── Search Bar ─────────────────────────────
+            // ------------------------- Search Bar -------------------------
             SliverToBoxAdapter(child: _buildSearchBar(dict, isAr)),
-            // ── Content ────────────────────────────────
+            // ------------------------- Content -------------------------
             if (!_loading && _result == null && _error == null)
-              SliverToBoxAdapter(
-                  child: _buildSuggestions(suggestions, isAr)),
-            if (_loading)
-              SliverToBoxAdapter(child: _buildLoadingState(isAr)),
+              SliverToBoxAdapter(child: _buildSuggestions(suggestions, isAr)),
+            if (_loading) SliverToBoxAdapter(child: _buildLoadingState(isAr)),
             if (_error != null)
               SliverToBoxAdapter(child: _buildErrorState(isAr)),
             if (_result != null && !_loading)
@@ -118,9 +142,9 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   // HERO
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   Widget _buildHero(Map<String, dynamic> dict, bool isAr) {
     return Stack(
       children: [
@@ -132,11 +156,7 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF0F172A),
-                Color(0xFF1E293B),
-                Color(0xFF0F4C3A),
-              ],
+              colors: [Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF0F4C3A)],
             ),
             borderRadius: BorderRadius.only(
               bottomLeft: Radius.circular(32.r),
@@ -148,7 +168,7 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
         ...List.generate(5, (i) {
           return AnimatedBuilder(
             animation: _brainCtrl,
-            builder: (_, __) {
+            builder: (_, _) {
               final phase = _brainCtrl.value * 2 * math.pi + (i * 1.26);
               final r = (50 + i * 20).toDouble();
               final cx = MediaQuery.of(context).size.width / 2;
@@ -168,8 +188,7 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                       AppColors.primary300,
                       const Color(0xFF4F46E5),
                       AppColors.successGreen,
-                    ][i]
-                        .withAlpha(60 + i * 15),
+                    ][i].withAlpha(60 + i * 15),
                   ),
                 ),
               );
@@ -193,8 +212,11 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                           color: Colors.white.withAlpha(15),
                           borderRadius: BorderRadius.circular(12.r),
                         ),
-                        child: Icon(Icons.arrow_back_rounded,
-                            size: 20.w, color: Colors.white),
+                        child: Icon(
+                          Icons.arrow_back_rounded,
+                          size: 20.w,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                     SizedBox(width: 12.w),
@@ -212,15 +234,16 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                 // AI Brain Icon + Tagline
                 AnimatedBuilder(
                   animation: _waveCtrl,
-                  builder: (_, __) {
+                  builder: (_, _) {
                     return Container(
                       padding: EdgeInsets.all(18.w),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
                           colors: [
-                            AppColors.primary400
-                                .withAlpha((40 + _waveCtrl.value * 30).toInt()),
+                            AppColors.primary400.withAlpha(
+                              (40 + _waveCtrl.value * 30).toInt(),
+                            ),
                             Colors.transparent,
                           ],
                           radius: 1.0 + _waveCtrl.value * 0.3,
@@ -232,15 +255,19 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                           color: Colors.white.withAlpha(12),
                           shape: BoxShape.circle,
                           border: Border.all(
-                              color: Colors.white.withAlpha(25), width: 1.5),
+                            color: Colors.white.withAlpha(25),
+                            width: 1.5,
+                          ),
                         ),
-                        child: Icon(Icons.psychology_rounded,
-                            size: 32.w, color: Colors.white),
+                        child: Icon(
+                          Icons.psychology_rounded,
+                          size: 32.w,
+                          color: Colors.white,
+                        ),
                       ),
                     );
                   },
-                ).animate().scale(
-                    duration: 600.ms, curve: Curves.easeOutBack),
+                ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
                 SizedBox(height: 10.h),
                 Text(
                   isAr
@@ -270,9 +297,9 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   // SEARCH BAR
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   Widget _buildSearchBar(Map<String, dynamic> dict, bool isAr) {
     return Transform.translate(
       offset: Offset(0, -22.h),
@@ -305,18 +332,27 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                   style: TextStyle(fontSize: 14.sp, color: AppColors.slate800),
                   decoration: InputDecoration(
                     hintText: dict['placeholder'] as String,
-                    hintStyle:
-                        TextStyle(fontSize: 14.sp, color: AppColors.slate400),
+                    hintStyle: TextStyle(
+                      fontSize: 14.sp,
+                      color: AppColors.slate400,
+                    ),
                     prefixIcon: Padding(
                       padding: EdgeInsets.symmetric(horizontal: 14.w),
-                      child: Icon(Icons.search_rounded,
-                          size: 22.w, color: AppColors.primary500),
+                      child: Icon(
+                        Icons.search_rounded,
+                        size: 22.w,
+                        color: AppColors.primary500,
+                      ),
                     ),
-                    prefixIconConstraints:
-                        BoxConstraints(minWidth: 48.w, minHeight: 48.h),
+                    prefixIconConstraints: BoxConstraints(
+                      minWidth: 48.w,
+                      minHeight: 48.h,
+                    ),
                     border: InputBorder.none,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 0, vertical: 16.h),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 0,
+                      vertical: 16.h,
+                    ),
                   ),
                 ),
               ),
@@ -325,8 +361,10 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                 onTap: _loading ? null : _search,
                 child: Container(
                   margin: EdgeInsets.only(right: 6.w),
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 18.w, vertical: 12.h),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 18.w,
+                    vertical: 12.h,
+                  ),
                   decoration: BoxDecoration(
                     gradient: AppColors.primaryGradient,
                     borderRadius: BorderRadius.circular(14.r),
@@ -338,8 +376,11 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                       ),
                     ],
                   ),
-                  child: Icon(Icons.auto_awesome,
-                      size: 20.w, color: Colors.white),
+                  child: Icon(
+                    Icons.auto_awesome,
+                    size: 20.w,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ],
@@ -349,9 +390,9 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   // SUGGESTIONS
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   Widget _buildSuggestions(List<String> suggestions, bool isAr) {
     return Padding(
       padding: EdgeInsets.fromLTRB(20.w, 0, 20.w, 0),
@@ -360,8 +401,11 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
         children: [
           Row(
             children: [
-              Icon(Icons.lightbulb_outline_rounded,
-                  size: 18.w, color: AppColors.warningAmber),
+              Icon(
+                Icons.lightbulb_outline_rounded,
+                size: 18.w,
+                color: AppColors.warningAmber,
+              ),
               SizedBox(width: 6.w),
               Text(
                 isAr ? 'جرّب تسأل عن:' : 'Try asking about:',
@@ -379,43 +423,53 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
             runSpacing: 8.h,
             children: suggestions.asMap().entries.map((e) {
               return GestureDetector(
-                onTap: () => _search(e.value),
-                child: Container(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 14.w, vertical: 9.h),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(color: const Color(0xFFE8ECF0)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(4),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
+                    onTap: () => _search(e.value),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 14.w,
+                        vertical: 9.h,
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.search_rounded,
-                          size: 14.w, color: AppColors.primary500),
-                      SizedBox(width: 6.w),
-                      Text(
-                        e.value,
-                        style: TextStyle(
-                          fontSize: 12.sp,
-                          color: AppColors.slate600,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12.r),
+                        border: Border.all(color: const Color(0xFFE8ECF0)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withAlpha(4),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              ).animate()
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.search_rounded,
+                            size: 14.w,
+                            color: AppColors.primary500,
+                          ),
+                          SizedBox(width: 6.w),
+                          Flexible(
+                            child: Text(
+                              e.value,
+                              style: TextStyle(
+                                fontSize: 12.sp,
+                                color: AppColors.slate600,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                  .animate()
                   .fadeIn(
-                      delay: Duration(milliseconds: 400 + e.key * 60),
-                      duration: 300.ms)
+                    delay: Duration(milliseconds: 400 + e.key * 60),
+                    duration: 300.ms,
+                  )
                   .slideY(begin: 0.1, end: 0);
             }).toList(),
           ),
@@ -437,7 +491,9 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isAr ? 'كيف يعمل البحث الذكي؟' : 'How does Smart Search work?',
+                  isAr
+                      ? 'كيف يعمل البحث الذكي؟'
+                      : 'How does Smart Search work?',
                   style: TextStyle(
                     fontSize: 14.sp,
                     fontWeight: FontWeight.w700,
@@ -445,17 +501,29 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                   ),
                 ),
                 SizedBox(height: 10.h),
-                _howItWorksRow(Icons.text_fields_rounded,
-                    isAr ? 'اكتب وصف بكلامك العادي' : 'Describe what you want naturally',
-                    AppColors.primary600),
+                _howItWorksRow(
+                  Icons.text_fields_rounded,
+                  isAr
+                      ? 'اكتب وصف بكلماتك العادية'
+                      : 'Describe what you want naturally',
+                  AppColors.primary600,
+                ),
                 SizedBox(height: 8.h),
-                _howItWorksRow(Icons.psychology_rounded,
-                    isAr ? 'الذكاء الاصطناعي يفهم احتياجك' : 'AI understands your needs',
-                    const Color(0xFF7C3AED)),
+                _howItWorksRow(
+                  Icons.psychology_rounded,
+                  isAr
+                      ? 'الذكاء الاصطناعي يفهم احتياجك'
+                      : 'AI understands your needs',
+                  const Color(0xFF7C3AED),
+                ),
                 SizedBox(height: 8.h),
-                _howItWorksRow(Icons.shopping_bag_rounded,
-                    isAr ? 'يرشحلك أفضل المنتجات' : 'Recommends best products',
-                    AppColors.auctionOrange),
+                _howItWorksRow(
+                  Icons.shopping_bag_rounded,
+                  isAr
+                      ? 'يرشحلك أفضل المنتجات'
+                      : 'Recommends best products',
+                  AppColors.auctionOrange,
+                ),
               ],
             ),
           ).animate().fadeIn(delay: 700.ms).slideY(begin: 0.05, end: 0),
@@ -490,9 +558,9 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   // LOADING STATE
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   Widget _buildLoadingState(bool isAr) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 20.w),
@@ -501,34 +569,40 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
           SizedBox(height: 20.h),
           // Animated brain
           AnimatedBuilder(
-            animation: _brainCtrl,
-            builder: (_, __) => Transform.rotate(
-              angle: math.sin(_brainCtrl.value * math.pi * 2) * 0.05,
-              child: Container(
-                padding: EdgeInsets.all(20.w),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.primary50,
-                  border: Border.all(
-                    color: AppColors.primary200.withAlpha(60),
+                animation: _brainCtrl,
+                builder: (_, _) => Transform.rotate(
+                  angle: math.sin(_brainCtrl.value * math.pi * 2) * 0.05,
+                  child: Container(
+                    padding: EdgeInsets.all(20.w),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.primary50,
+                      border: Border.all(
+                        color: AppColors.primary200.withAlpha(60),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.psychology_rounded,
+                      size: 36.w,
+                      color: AppColors.primary500,
+                    ),
                   ),
                 ),
-                child: Icon(Icons.psychology_rounded,
-                    size: 36.w, color: AppColors.primary500),
-              ),
-            ),
-          )
+              )
               .animate(onPlay: (c) => c.repeat(reverse: true))
               .scaleXY(begin: 0.9, end: 1.05, duration: 1200.ms),
           SizedBox(height: 16.h),
           Text(
-            isAr ? 'الذكاء الاصطناعي يبحث...' : 'AI is searching...',
-            style: TextStyle(
-              fontSize: 15.sp,
-              fontWeight: FontWeight.w700,
-              color: AppColors.slate700,
-            ),
-          ).animate(onPlay: (c) => c.repeat(reverse: true))
+                isAr
+                    ? 'الذكاء الاصطناعي يبحث...'
+                    : 'AI is searching...',
+                style: TextStyle(
+                  fontSize: 15.sp,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.slate700,
+                ),
+              )
+              .animate(onPlay: (c) => c.repeat(reverse: true))
               .fadeIn(duration: 800.ms),
           SizedBox(height: 6.h),
           Text(
@@ -541,23 +615,24 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
           SizedBox(height: 24.h),
           // Progress shimmer cards
           ...List.generate(
-              3,
-              (i) => Padding(
-                    padding: EdgeInsets.only(bottom: 10.h),
-                    child: AppShimmer(
-                      width: double.infinity,
-                      height: 60.h,
-                      borderRadius: BorderRadius.circular(14.r),
-                    ),
-                  )),
+            3,
+            (i) => Padding(
+              padding: EdgeInsets.only(bottom: 10.h),
+              child: AppShimmer(
+                width: double.infinity,
+                height: 60.h,
+                borderRadius: BorderRadius.circular(14.r),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   // ERROR
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   Widget _buildErrorState(bool isAr) {
     return Padding(
       padding: EdgeInsets.all(20.w),
@@ -570,16 +645,16 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
         ),
         child: Row(
           children: [
-            Icon(Icons.error_outline_rounded,
-                color: AppColors.errorRed, size: 22.w),
+            Icon(
+              Icons.error_outline_rounded,
+              color: AppColors.errorRed,
+              size: 22.w,
+            ),
             SizedBox(width: 10.w),
             Expanded(
               child: Text(
                 _error!,
-                style: TextStyle(
-                  fontSize: 12.sp,
-                  color: AppColors.errorRed,
-                ),
+                style: TextStyle(fontSize: 12.sp, color: AppColors.errorRed),
               ),
             ),
           ],
@@ -588,32 +663,29 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
   // RESULTS
-  // ═══════════════════════════════════════════════════════════════
+  // -----------------------------------------------------------------------
+
   Widget _buildResults(bool isAr) {
     final summary = _result?['answer']?['summary'] as String? ?? '';
-    final items = (_result?['answer']?['items'] as List?) ?? [];
     final meta = _result?['meta'] as Map<String, dynamic>?;
+    final currency = ref.read(languageProvider).dict['currency'] as String;
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 20.w),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // AI Summary card
           if (summary.isNotEmpty)
             Container(
               width: double.infinity,
               padding: EdgeInsets.all(18.w),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
+                gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF0F172A),
-                    const Color(0xFF1E293B),
-                  ],
+                  colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
                 ),
                 borderRadius: BorderRadius.circular(20.r),
                 boxShadow: [
@@ -635,8 +707,11 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                           color: AppColors.primary500.withAlpha(25),
                           borderRadius: BorderRadius.circular(8.r),
                         ),
-                        child: Icon(Icons.auto_awesome,
-                            size: 16.w, color: AppColors.primary400),
+                        child: Icon(
+                          Icons.auto_awesome,
+                          size: 16.w,
+                          color: AppColors.primary400,
+                        ),
                       ),
                       SizedBox(width: 8.w),
                       Text(
@@ -662,16 +737,33 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
               ),
             ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0),
 
-          // Products
-          if (items.isNotEmpty) ...[
+          if (_loadingProducts) ...[
+            SizedBox(height: 20.h),
+            ...List.generate(
+              3,
+              (i) => Padding(
+                padding: EdgeInsets.only(bottom: 10.h),
+                child: AppShimmer(
+                  width: double.infinity,
+                  height: 90.h,
+                  borderRadius: BorderRadius.circular(16.r),
+                ),
+              ),
+            ),
+          ] else if (_products.isNotEmpty) ...[
             SizedBox(height: 20.h),
             Row(
               children: [
-                Icon(Icons.shopping_bag_rounded,
-                    size: 18.w, color: AppColors.primary600),
+                Icon(
+                  Icons.shopping_bag_rounded,
+                  size: 18.w,
+                  color: AppColors.primary600,
+                ),
                 SizedBox(width: 6.w),
                 Text(
-                  isAr ? 'المنتجات المقترحة' : 'Recommended Products',
+                  isAr
+                      ? 'المنتجات المقترحة'
+                      : 'Recommended Products',
                   style: TextStyle(
                     fontSize: 15.sp,
                     fontWeight: FontWeight.w700,
@@ -680,14 +772,13 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
                 ),
                 const Spacer(),
                 Container(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
                   decoration: BoxDecoration(
                     color: AppColors.primary50,
                     borderRadius: BorderRadius.circular(6.r),
                   ),
                   child: Text(
-                    '${items.length}',
+                    '${_products.length}',
                     style: TextStyle(
                       fontSize: 12.sp,
                       fontWeight: FontWeight.w800,
@@ -698,84 +789,176 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
               ],
             ).animate().fadeIn(delay: 200.ms),
             SizedBox(height: 10.h),
-            ...items.asMap().entries.map((e) {
-              final id = e.value;
+            ..._products.asMap().entries.map((entry) {
+              final i = entry.key;
+              final p = entry.value;
+              final image = p.primaryImage;
+              final title = p.title;
+              final price = p.price;
+              final location = p.location;
+              final isAuction = p.isAuction;
+              final id = p.id.toString();
+
               return GestureDetector(
-                onTap: () => context.push('/product/$id'),
-                child: Container(
-                  margin: EdgeInsets.only(bottom: 10.h),
-                  padding: EdgeInsets.all(14.w),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16.r),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(6),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+                    onTap: () => context.push('/product/$id'),
+                    child: Container(
+                      margin: EdgeInsets.only(bottom: 12.h),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16.r),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withAlpha(6),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                        border: Border.all(color: const Color(0xFFEEF0F2)),
                       ),
-                    ],
-                    border: Border.all(color: const Color(0xFFE8ECF0)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: EdgeInsets.all(10.w),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary50,
-                          borderRadius: BorderRadius.circular(12.r),
-                        ),
-                        child: Icon(Icons.shopping_bag_outlined,
-                            size: 20.w, color: AppColors.primary600),
-                      ),
-                      SizedBox(width: 12.w),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${isAr ? 'منتج' : 'Product'} #$id',
-                              style: TextStyle(
-                                fontSize: 14.sp,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.slate800,
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.only(
+                              topLeft: Radius.circular(16.r),
+                              bottomLeft: Radius.circular(16.r),
+                            ),
+                            child: image != null
+                                ? CachedNetworkImage(
+                                    imageUrl: image,
+                                    width: 90.w,
+                                    height: 90.w,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, _) => Container(
+                                      width: 90.w,
+                                      height: 90.w,
+                                      color: const Color(0xFFF3F4F6),
+                                    ),
+                                    errorWidget: (_, _, _) => Container(
+                                      width: 90.w,
+                                      height: 90.w,
+                                      color: const Color(0xFFF3F4F6),
+                                      child: Icon(
+                                        Icons.image_outlined,
+                                        size: 28.w,
+                                        color: AppColors.slate300,
+                                      ),
+                                    ),
+                                  )
+                                : Container(
+                                    width: 90.w,
+                                    height: 90.w,
+                                    color: const Color(0xFFF3F4F6),
+                                    child: Icon(
+                                      Icons.image_outlined,
+                                      size: 28.w,
+                                      color: AppColors.slate300,
+                                    ),
+                                  ),
+                          ),
+                          SizedBox(width: 12.w),
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12.h),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 6.w,
+                                      vertical: 2.h,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary50,
+                                      borderRadius: BorderRadius.circular(4.r),
+                                    ),
+                                    child: Text(
+                                      '#${i + 1} ${isAr ? "أفضل تطابق" : "Best match"}',
+                                      style: TextStyle(
+                                        fontSize: 9.sp,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primary600,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(height: 4.h),
+                                  Text(
+                                    title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 13.sp,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.slate800,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4.h),
+                                  Text(
+                                    '${double.tryParse(price)?.toStringAsFixed(0) ?? price} $currency',
+                                    style: TextStyle(
+                                      fontSize: 14.sp,
+                                      fontWeight: FontWeight.w900,
+                                      color: isAuction
+                                          ? AppColors.auctionOrange
+                                          : AppColors.primary600,
+                                    ),
+                                  ),
+                                  if (location.isNotEmpty)
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.location_on_rounded,
+                                          size: 11.w,
+                                          color: AppColors.slate400,
+                                        ),
+                                        SizedBox(width: 2.w),
+                                        Expanded(
+                                          child: Text(
+                                            location,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 10.sp,
+                                              color: AppColors.slate400,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                ],
                               ),
                             ),
-                            Text(
-                              isAr
-                                  ? 'اضغط لعرض التفاصيل'
-                                  : 'Tap to view details',
-                              style: TextStyle(
-                                fontSize: 11.sp,
-                                color: AppColors.slate400,
+                          ),
+                          Padding(
+                            padding: EdgeInsets.only(right: 12.w),
+                            child: Container(
+                              padding: EdgeInsets.all(8.w),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary50,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 12.w,
+                                color: AppColors.primary600,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      Container(
-                        padding: EdgeInsets.all(8.w),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary50,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(Icons.arrow_forward_rounded,
-                            size: 16.w, color: AppColors.primary600),
-                      ),
-                    ],
-                  ),
-                ),
-              ).animate()
+                    ),
+                  )
+                  .animate()
                   .fadeIn(
-                      delay: Duration(milliseconds: 300 + e.key * 80),
-                      duration: 300.ms)
+                    delay: Duration(milliseconds: 300 + i * 80),
+                    duration: 350.ms,
+                  )
                   .slideX(begin: 0.05, end: 0);
             }),
           ],
 
-          // Meta
           if (meta != null) ...[
-            SizedBox(height: 16.h),
+            SizedBox(height: 12.h),
             Container(
               padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
               decoration: BoxDecoration(
@@ -785,16 +968,18 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.speed_rounded,
-                      size: 14.w, color: AppColors.slate400),
+                  Icon(
+                    Icons.speed_rounded,
+                    size: 14.w,
+                    color: AppColors.slate400,
+                  ),
                   SizedBox(width: 6.w),
                   Text(
-                    '${meta['latency_ms']}ms • SQL: ${meta['sql_results']} • Vector: ${meta['vector_results']}',
+                    '${meta["latency_ms"]}ms - SQL: ${meta["sql_results"]} - Vector: ${meta["vector_results"]}',
                     style: TextStyle(
                       fontSize: 11.sp,
                       color: AppColors.slate400,
                       fontWeight: FontWeight.w500,
-                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],

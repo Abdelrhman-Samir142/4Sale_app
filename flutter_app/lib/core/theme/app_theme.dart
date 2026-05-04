@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
-import 'app_typography.dart';
-import 'app_spacing.dart';
 import 'app_radius.dart';
-import 'app_shadows.dart';
 
 /// Semantic accent colors not covered by Material's [ColorScheme].
 /// Access via `Theme.of(context).extension<AppColorsExtension>()!`.
