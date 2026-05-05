@@ -28,7 +28,7 @@ class AuctionsCarousel extends StatelessWidget {
           scrollDirection: Axis.horizontal,
           padding: EdgeInsets.symmetric(horizontal: 16.w),
           itemCount: 3,
-          itemBuilder: (_, _) => Container(
+          itemBuilder: (_, __) => Container(
             width: 260.w,
             margin: EdgeInsets.only(right: 12.w),
             child: AppShimmer(
@@ -192,9 +192,9 @@ class _AuctionCardState extends State<_AuctionCard>
                       CachedNetworkImage(
                         imageUrl: image,
                         fit: BoxFit.cover,
-                        placeholder: (_, _) =>
+                        placeholder: (_, __) =>
                             Container(color: const Color(0xFFF3F4F6)),
-                        errorWidget: (_, _, _) => Container(
+                        errorWidget: (_, __, ___) => Container(
                           color: const Color(0xFFFFF7ED),
                           child: Icon(Icons.gavel_rounded,
                               size: 36.w,

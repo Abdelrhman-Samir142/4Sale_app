@@ -7,7 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../core/utils/app_snackbar.dart';
-
+import '../../core/widgets/app_logo.dart';
 // ── Clean Premium Light Theme ──────────────────────────────────────
 const Color _bgLight = Color(0xFFF7F9FC);
 const Color _primaryTeal = Color(0xFF0F766E);
@@ -133,7 +133,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> with TickerProv
                 child: Container(
                   color: Colors.white54,
                   child: Center(
-                    child: CircularProgressIndicator(color: _primaryTeal).animate().scale(curve: Curves.easeOutBack),
+                    child: const CircularProgressIndicator(color: _primaryTeal).animate().scale(curve: Curves.easeOutBack),
                   ),
                 ),
               ),
@@ -159,7 +159,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> with TickerProv
   Widget _buildAnimatedBg() {
     return AnimatedBuilder(
       animation: _bgCtrl,
-      builder: (_, _) {
+      builder: (_, __) {
         return Stack(
           children: [
             Container(color: _bgLight),
@@ -195,76 +195,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> with TickerProv
     );
   }
 
-  Widget _buildOfficialLogo() {
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 50.w,
-            height: 50.w,
-            decoration: BoxDecoration(
-              color: _primaryTeal,
-              borderRadius: BorderRadius.circular(16.r),
-              boxShadow: [
-                BoxShadow(
-                  color: _primaryTeal.withAlpha(50),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                )
-              ],
-            ),
-            child: Center(
-              child: Text(
-                '4',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 28.sp,
-                  fontWeight: FontWeight.w900,
-                  height: 1.1,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(width: 12.w),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Sale',
-                style: TextStyle(
-                  color: _textDark,
-                  fontSize: 28.sp,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -1,
-                  height: 1.1,
-                ),
-              ),
-              Text(
-                'MARKETPLACE',
-                style: TextStyle(
-                  color: _textGrey,
-                  fontSize: 10.sp,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2,
-                  height: 1.1,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.2);
-  }
+
 
   Widget _buildHeader(bool isAr) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _buildOfficialLogo(),
+        const AppLogo(),
         SizedBox(height: 36.h),
         Text(
           isAr ? 'إنشاء حساب جديد' : 'Create Account',

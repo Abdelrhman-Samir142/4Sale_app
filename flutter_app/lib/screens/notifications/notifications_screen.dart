@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -71,16 +72,16 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         combined.contains('مزايدة') ||
         combined.contains('auction') ||
         combined.contains('مزاد')) {
-      return _NotifStyle(
+      return const _NotifStyle(
         icon: Icons.gavel_rounded,
         color: AppColors.auctionOrange,
-        bgColor: const Color(0xFFFFF7ED),
+        bgColor: Color(0xFFFFF7ED),
       );
     }
     if (combined.contains('message') ||
         combined.contains('رسالة') ||
         combined.contains('chat')) {
-      return _NotifStyle(
+      return const _NotifStyle(
         icon: Icons.chat_bubble_rounded,
         color: AppColors.primary600,
         bgColor: AppColors.primary50,
@@ -90,34 +91,34 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         combined.contains('وكيل') ||
         combined.contains('ai') ||
         combined.contains('ذكي')) {
-      return _NotifStyle(
+      return const _NotifStyle(
         icon: Icons.smart_toy_rounded,
-        color: const Color(0xFF7C3AED),
-        bgColor: const Color(0xFFF3F0FF),
+        color: Color(0xFF7C3AED),
+        bgColor: Color(0xFFF3F0FF),
       );
     }
     if (combined.contains('price') ||
         combined.contains('سعر') ||
         combined.contains('discount')) {
-      return _NotifStyle(
+      return const _NotifStyle(
         icon: Icons.trending_down_rounded,
         color: AppColors.successGreen,
-        bgColor: const Color(0xFFECFDF5),
+        bgColor: Color(0xFFECFDF5),
       );
     }
     if (combined.contains('welcome') ||
         combined.contains('مرحباً') ||
         combined.contains('congrat')) {
-      return _NotifStyle(
+      return const _NotifStyle(
         icon: Icons.celebration_rounded,
-        color: const Color(0xFFE11D48),
-        bgColor: const Color(0xFFFFF1F2),
+        color: Color(0xFFE11D48),
+        bgColor: Color(0xFFFFF1F2),
       );
     }
-    return _NotifStyle(
+    return const _NotifStyle(
       icon: Icons.notifications_rounded,
       color: AppColors.slate600,
-      bgColor: const Color(0xFFF1F5F9),
+      bgColor: Color(0xFFF1F5F9),
     );
   }
 
@@ -150,6 +151,37 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             ],
           ),
         ),
+        floatingActionButton: kDebugMode
+            ? FloatingActionButton.extended(
+                onPressed: () {
+                  final types = [
+                    {'title': 'مزايدة جديدة', 'msg': 'قام شخص بالمزايدة على منتجك بمبلغ 500 ريال.', 'reasoning': 'تم تحليل السعر بواسطة الذكاء الاصطناعي كأفضل عرض.'},
+                    {'title': 'رسالة جديدة', 'msg': 'لديك رسالة جديدة بخصوص إعلانك للسيارة.', 'reasoning': null},
+                    {'title': 'انخفاض السعر', 'msg': 'انخفض سعر المنتج الذي تتابعه بنسبة 20%.', 'reasoning': null},
+                    {'title': 'مرحباً بك', 'msg': 'أهلاً بك في تطبيق 4Sale! نتمنى لك تجربة ممتعة.', 'reasoning': null},
+                  ];
+                  
+                  final randomType = types[DateTime.now().millisecond % types.length];
+                  
+                  setState(() {
+                    _notifications.insert(0, {
+                      'id': DateTime.now().millisecondsSinceEpoch,
+                      'title': isAr ? randomType['title'] : 'Test Notification',
+                      'message': isAr ? randomType['msg'] : 'This is a test notification.',
+                      'reasoning': randomType['reasoning'],
+                      'created_at': DateTime.now().toIso8601String(),
+                      'is_read': false,
+                    });
+                  });
+                },
+                backgroundColor: AppColors.primary600,
+                icon: const Icon(Icons.bug_report_rounded, color: Colors.white),
+                label: Text(
+                  isAr ? 'إشعار تجريبي' : 'Test Notif',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              )
+            : null,
       ),
     );
   }
@@ -358,7 +390,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     return ListView.builder(
       padding: EdgeInsets.all(16.w),
       itemCount: 6,
-      itemBuilder: (_, _) => Padding(
+      itemBuilder: (_, __) => Padding(
         padding: EdgeInsets.only(bottom: 10.h),
         child: Row(
           children: [
@@ -396,7 +428,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         children: [
           Container(
             padding: EdgeInsets.all(28.w),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppColors.primary50,
               shape: BoxShape.circle,
             ),

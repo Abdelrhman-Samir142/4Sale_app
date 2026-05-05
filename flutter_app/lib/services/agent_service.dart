@@ -36,7 +36,7 @@ class AgentService {
       final response = await _dio.post(ApiConstants.agents, data: {
         'target_item': targetItem,
         'max_budget': maxBudget,
-        'requirements_prompt': ?requirementsPrompt,
+        'requirements_prompt': requirementsPrompt,
       });
       return response.data as Map<String, dynamic>;
     } on DioException catch (e) {

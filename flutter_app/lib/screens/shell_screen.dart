@@ -13,11 +13,12 @@ class ShellScreen extends ConsumerWidget {
   const ShellScreen({super.key, required this.child});
 
   static int _indexFromPath(String path) {
+    if (path.startsWith('/store')) return 0;
     if (path.startsWith('/auctions')) return 1;
     // index 2 is the center FAB (sell) – not a real tab
     if (path.startsWith('/messages')) return 3;
     if (path.startsWith('/profile')) return 4;
-    return 0; // home (dashboard)
+    return 0; // home/store (dashboard)
   }
 
   @override
@@ -61,14 +62,15 @@ class ShellScreen extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _NavItem(
-                    icon: Icons.home_outlined,
-                    activeIcon: Icons.home_rounded,
-                    label: dict['nav']['home'] as String,
+                    icon: Icons.storefront_outlined,
+                    activeIcon: Icons.storefront_rounded,
+                    label: dict['nav']['shop'] as String,
                     isSelected: currentIndex == 0,
                     accentColor: AppColors.primary600,
                     onTap: () {
+                      debugPrint('Tapped Store icon from bottom nav! currentPath: $path');
                       HapticFeedback.selectionClick();
-                      context.go('/');
+                      context.go('/store');
                     },
                   ),
                   _NavItem(
@@ -259,12 +261,14 @@ class _SellFabState extends State<_SellFab>
         widget.onTap();
       },
       onTapCancel: () => _controller.reverse(),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
         children: [
-          // Push up the FAB above the bar
-          Transform.translate(
-            offset: Offset(0, -12.h),
+          // Invisible box to give the FAB area a footprint in the Row
+          SizedBox(width: 54.w, height: 68.h),
+          Positioned(
+            top: -12.h,
             child: ScaleTransition(
               scale: _scaleAnim,
               child: Container(
@@ -292,15 +296,13 @@ class _SellFabState extends State<_SellFab>
                   ],
                 ),
                 child: Center(
-                  child: Icon(Icons.add_rounded,
-                      color: Colors.white, size: 28.w),
+                  child: Icon(Icons.add_rounded, color: Colors.white, size: 28.w),
                 ),
               ),
             ),
           ),
-          // Label
-          Transform.translate(
-            offset: Offset(0, -8.h),
+          Positioned(
+            bottom: 6.h,
             child: Text(
               widget.label,
               style: TextStyle(

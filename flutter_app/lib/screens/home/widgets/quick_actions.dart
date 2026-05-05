@@ -36,7 +36,7 @@ class QuickActions extends StatelessWidget {
             (isAr ? 'المتجر' : 'Marketplace'),
         color: AppColors.primary600,
         bgColor: AppColors.primary50,
-        route: '/',
+        route: '/store',
       ),
       _QuickAction(
         icon: Icons.gavel_rounded,

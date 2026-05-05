@@ -7,6 +7,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../providers/language_provider.dart';
 import '../../../providers/notifications_provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_logo.dart';
 
 class HomeAppBar extends ConsumerWidget {
   const HomeAppBar({super.key});
@@ -22,33 +23,7 @@ class HomeAppBar extends ConsumerWidget {
         child: Row(
           children: [
             // Logo
-            Container(
-              width: 40.w,
-              height: 40.w,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12.r),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary600.withAlpha(30),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12.r),
-                child: Image.asset('assets/images/logo.png',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Container(
-                          decoration: BoxDecoration(
-                            gradient: AppColors.primaryGradient,
-                            borderRadius: BorderRadius.circular(12.r),
-                          ),
-                          child: Icon(Icons.store_rounded,
-                              size: 22.w, color: Colors.white),
-                        )),
-              ),
-            ),
+            const AppLogo(scale: 0.8, withAnimation: false),
             SizedBox(width: 12.w),
             // Greeting + Username
             Expanded(
@@ -89,7 +64,7 @@ class HomeAppBar extends ConsumerWidget {
               onTap: () => context.push('/search'),
             ),
             // Notifications button with badge
-            _NotificationBtn(),
+            const _NotificationBtn(),
           ],
         ),
       ).animate().fadeIn(duration: 300.ms).slideY(begin: -0.1, end: 0),

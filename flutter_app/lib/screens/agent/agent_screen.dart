@@ -404,7 +404,7 @@ class _AgentScreenState extends ConsumerState<AgentScreen>
           ...List.generate(3, (i) {
             return AnimatedBuilder(
               animation: _orbCtrl,
-              builder: (_, _) {
+              builder: (_, __) {
                 final angle =
                     _orbCtrl.value * 2 * math.pi + (i * math.pi * 2 / 3);
                 final x = math.cos(angle) * (40.w + i * 15.w);
@@ -585,8 +585,8 @@ class _AgentScreenState extends ConsumerState<AgentScreen>
         children: [
           Container(
             padding: EdgeInsets.all(24.w),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F0FF),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF3F0FF),
               shape: BoxShape.circle,
             ),
             child: Icon(Icons.smart_toy_outlined,
@@ -773,7 +773,7 @@ class _AgentCardState extends State<_AgentCard>
 
     return AnimatedBuilder(
       animation: _glowCtrl,
-      builder: (_, _) {
+      builder: (_, __) {
         return Container(
           padding: EdgeInsets.all(16.w),
           decoration: BoxDecoration(
@@ -902,7 +902,7 @@ class _AgentCardState extends State<_AgentCard>
                     child: Switch.adaptive(
                       value: isActive,
                       onChanged: widget.onToggle,
-                      activeThumbColor: const Color(0xFF7C3AED),
+                      activeColor: const Color(0xFF7C3AED),
                       activeTrackColor:
                           const Color(0xFF7C3AED).withAlpha(40),
                     ),

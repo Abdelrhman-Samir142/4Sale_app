@@ -313,7 +313,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
                 children: [
                   Container(
                     padding: EdgeInsets.all(16.w),
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: AppColors.primary50,
                       shape: BoxShape.circle,
                     ),
@@ -342,7 +342,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _images.length,
-              separatorBuilder: (_, _) => SizedBox(width: 10.w),
+              separatorBuilder: (_, __) => SizedBox(width: 10.w),
               itemBuilder: (_, i) => Stack(children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12.r),
@@ -568,7 +568,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
             boxShadow: [BoxShadow(color: Colors.black.withAlpha(6), blurRadius: 6, offset: const Offset(0, 2))],
           ),
           child: ListTile(
-            leading: Icon(Icons.calendar_today_rounded, color: AppColors.primary600),
+            leading: const Icon(Icons.calendar_today_rounded, color: AppColors.primary600),
             title: Text(dict['auctionEndTime'] as String,
                 style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
             subtitle: Text(_auctionEnd?.toString() ??
@@ -708,8 +708,8 @@ class _DashedBorderPainter extends CustomPainter {
           Rect.fromLTWH(0, 0, size.width, size.height), Radius.circular(borderRadius)));
 
     // Draw dashed path
-    final dashWidth = 8.0;
-    final dashSpace = 5.0;
+    const dashWidth = 8.0;
+    const dashSpace = 5.0;
     final pathMetrics = path.computeMetrics();
     for (final metric in pathMetrics) {
       double distance = 0;

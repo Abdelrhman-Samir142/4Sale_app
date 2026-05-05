@@ -338,7 +338,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       margin: EdgeInsets.symmetric(vertical: 12.h),
       child: Row(
         children: [
-          Expanded(child: Divider(color: AppColors.slate200, thickness: 0.8)),
+          const Expanded(child: Divider(color: AppColors.slate200, thickness: 0.8)),
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 12.w),
             child: Container(
@@ -357,7 +357,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               ),
             ),
           ),
-          Expanded(child: Divider(color: AppColors.slate200, thickness: 0.8)),
+          const Expanded(child: Divider(color: AppColors.slate200, thickness: 0.8)),
         ],
       ),
     );

@@ -22,7 +22,7 @@ class OfflineBanner extends ConsumerWidget {
         return _BannerContent();
       },
       loading: () => const SizedBox.shrink(),
-      error: (_, _) => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 }

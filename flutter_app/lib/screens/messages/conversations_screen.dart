@@ -224,7 +224,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     return ListView.builder(
       padding: EdgeInsets.all(16.w),
       itemCount: 6,
-      itemBuilder: (_, _) => Padding(
+      itemBuilder: (_, __) => Padding(
         padding: EdgeInsets.only(bottom: 10.h),
         child: Row(
           children: [
@@ -262,7 +262,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         children: [
           Container(
             padding: EdgeInsets.all(24.w),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppColors.primary50,
               shape: BoxShape.circle,
             ),

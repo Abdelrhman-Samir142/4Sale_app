@@ -201,7 +201,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
           childAspectRatio: 0.72,
         ),
         itemCount: 6,
-        itemBuilder: (_, _) => AppShimmer(
+        itemBuilder: (_, __) => AppShimmer(
           width: double.infinity,
           height: double.infinity,
           borderRadius: BorderRadius.circular(18.r),
@@ -364,9 +364,9 @@ class _WishlistCardState extends State<_WishlistCard>
                       CachedNetworkImage(
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, _) =>
+                        placeholder: (_, __) =>
                             Container(color: const Color(0xFFF1F5F9)),
-                        errorWidget: (_, _, _) => Container(
+                        errorWidget: (_, __, ___) => Container(
                           color: const Color(0xFFF1F5F9),
                           child: Icon(Icons.image_outlined,
                               size: 30.w, color: AppColors.slate300),

@@ -4,9 +4,10 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/splash/splash_screen.dart';
 import '../../screens/onboarding/onboarding_screen.dart';
-import '../../screens/onboarding/language_selection_screen.dart';
+
 import '../../screens/auth/login_screen.dart';
 import '../../screens/auth/register_screen.dart';
+import '../../screens/auth/forgot_password_screen.dart';
 import '../../screens/home/home_screen.dart';
 import '../../screens/product/product_detail_screen.dart';
 import '../../screens/sell/sell_screen.dart';
@@ -58,7 +59,7 @@ CustomTransitionPage _buildFadeTransition(Widget child, LocalKey key) {
 /// GoRouter can re-evaluate its redirect without being recreated.
 class _AuthChangeNotifier extends ChangeNotifier {
   _AuthChangeNotifier(Ref ref) {
-    ref.listen<AuthState>(authProvider, (_, _) {
+    ref.listen<AuthState>(authProvider, (_, __) {
       notifyListeners();
     });
   }
@@ -82,13 +83,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       final path = state.uri.path;
 
       // Whitelist entry points
-      final isEntryPoint = path == '/splash' || path == '/language' || path == '/onboarding';
+      final isEntryPoint = path == '/splash' || path == '/onboarding';
       if (isEntryPoint) return null;
 
       // Still loading auth — don't redirect
       if (isLoading) return null;
 
-      final isAuthPage = path == '/login' || path == '/register';
+      final isAuthPage = path == '/login' || path == '/register' || path == '/forgot-password';
 
       // Rule 1: Not logged in and trying to access a restricted page -> go to login
       if (!isLoggedIn && !isAuthPage) {
@@ -110,11 +111,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'splash',
         builder: (context, state) => const SplashScreen(),
       ),
-      GoRoute(
-        path: '/language',
-        name: 'language',
-        builder: (context, state) => const LanguageSelectionScreen(),
-      ),
+
       GoRoute(
         path: '/onboarding',
         name: 'onboarding',
@@ -157,6 +154,14 @@ final routerProvider = Provider<GoRouter>((ref) {
               state.pageKey,
             ),
           ),
+          GoRoute(
+            path: '/store',
+            name: 'store',
+            pageBuilder: (context, state) => _buildFadeTransition(
+              const StoreScreen(),
+              state.pageKey,
+            ),
+          ),
         ],
       ),
 
@@ -170,6 +175,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/register',
         name: 'register',
         builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: '/forgot-password',
+        name: 'forgotPassword',
+        builder: (context, state) => const ForgotPasswordScreen(),
       ),
       GoRoute(
         path: '/product/:id',
@@ -233,14 +243,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'editProfile',
         pageBuilder: (context, state) => _buildSlideUpTransition(
           const EditProfileScreen(),
-          state.pageKey,
-        ),
-      ),
-      GoRoute(
-        path: '/store',
-        name: 'store',
-        pageBuilder: (context, state) => _buildSlideUpTransition(
-          const StoreScreen(),
           state.pageKey,
         ),
       ),

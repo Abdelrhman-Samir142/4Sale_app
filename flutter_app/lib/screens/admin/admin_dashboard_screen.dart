@@ -133,7 +133,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
           // Admin badge
           AnimatedBuilder(
             animation: _glowCtrl,
-            builder: (_, _) {
+            builder: (_, __) {
               return Container(
                 padding: EdgeInsets.all(10.w),
                 decoration: BoxDecoration(
@@ -331,7 +331,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
           final kpi = kpis[i];
           return AnimatedBuilder(
             animation: _chartCtrl,
-            builder: (_, _) {
+            builder: (_, __) {
               final progress = Curves.easeOutBack
                   .transform((_chartCtrl.value * (1 + i * 0.15)).clamp(0, 1));
               return _buildKpiCard(kpi, progress);
@@ -484,7 +484,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
               height: 140.h,
               child: AnimatedBuilder(
                 animation: _chartCtrl,
-                builder: (_, _) {
+                builder: (_, __) {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: _buildBarChartBars(),

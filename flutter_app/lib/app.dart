@@ -5,6 +5,7 @@ import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'providers/theme_provider.dart';
 import 'providers/language_provider.dart';
+import 'core/utils/global_keys.dart';
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -26,6 +27,7 @@ class ForSaleApp extends ConsumerWidget {
         return MaterialApp.router(
           title: '4Sale',
           debugShowCheckedModeBanner: false,
+          scaffoldMessengerKey: GlobalKeys.scaffoldMessengerKey,
 
           // Theme
           theme: AppTheme.light,

@@ -321,7 +321,7 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
     return ListView.builder(
       padding: EdgeInsets.all(16.w),
       itemCount: 4,
-      itemBuilder: (_, _) => Padding(
+      itemBuilder: (_, __) => Padding(
         padding: EdgeInsets.only(bottom: 12.h),
         child: AppShimmer(
           width: double.infinity,
@@ -497,9 +497,9 @@ class _PremiumAuctionCardState extends State<_PremiumAuctionCard>
                         CachedNetworkImage(
                           imageUrl: image,
                           fit: BoxFit.cover,
-                          placeholder: (_, _) =>
+                          placeholder: (_, __) =>
                               Container(color: const Color(0xFFFFF7ED)),
-                          errorWidget: (_, _, _) => Container(
+                          errorWidget: (_, __, ___) => Container(
                             color: const Color(0xFFFFF7ED),
                             child: Icon(Icons.gavel_rounded,
                                 size: 30.w,

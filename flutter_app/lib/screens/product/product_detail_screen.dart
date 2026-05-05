@@ -185,9 +185,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         backgroundColor: const Color(0xFFFAFBFC),
         body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.error_outline_rounded, size: 56, color: AppColors.errorRed.withAlpha(120)),
-          SizedBox(height: 16),
-          Text(_errorMsg!, style: TextStyle(fontSize: 16, color: AppColors.slate600, fontWeight: FontWeight.w600)),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
+          Text(_errorMsg!, style: const TextStyle(fontSize: 16, color: AppColors.slate600, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 16),
           ElevatedButton.icon(
             onPressed: () { setState(() { _loading = true; _errorMsg = null; }); _load(); },
             icon: const Icon(Icons.refresh_rounded),
@@ -283,9 +283,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: 340.h,
-                    placeholder: (_, _) =>
+                    placeholder: (_, __) =>
                         Container(color: const Color(0xFFF1F5F9)),
-                    errorWidget: (_, _, _) => Container(
+                    errorWidget: (_, __, ___) => Container(
                       color: const Color(0xFFF1F5F9),
                       child: Icon(Icons.broken_image_outlined,
                           size: 48.w, color: AppColors.slate300),
@@ -584,12 +584,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       child: Container(
         padding: EdgeInsets.all(16.w),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              const Color(0xFFFFF7ED),
-              const Color(0xFFFFF1E6),
+              Color(0xFFFFF7ED),
+              Color(0xFFFFF1E6),
             ],
           ),
           borderRadius: BorderRadius.circular(20.r),

@@ -128,4 +128,33 @@ class AuthNotifier extends Notifier<AuthState> {
     await SecureStorageService.clearTokens();
     state = const AuthState();
   }
+
+  /// ── MOCK UPDATE ──────────────────────────────────────────────────────────
+  /// Temporarily updates the local user object without sending an API request.
+  void updateUserMock({
+    String? firstName,
+    String? lastName,
+    String? walletBalance,
+    String? mockAvatarPath,
+  }) {
+    if (state.user == null) return;
+    
+    final updatedUser = Map<String, dynamic>.from(state.user!);
+    
+    if (walletBalance != null) {
+      updatedUser['wallet_balance'] = walletBalance;
+    }
+    if (mockAvatarPath != null) {
+      updatedUser['mock_avatar'] = mockAvatarPath;
+    }
+    
+    if (firstName != null || lastName != null) {
+      final userInfo = Map<String, dynamic>.from(updatedUser['user'] as Map<String, dynamic>? ?? {});
+      if (firstName != null) userInfo['first_name'] = firstName;
+      if (lastName != null) userInfo['last_name'] = lastName;
+      updatedUser['user'] = userInfo;
+    }
+
+    state = state.copyWith(user: updatedUser);
+  }
 }
