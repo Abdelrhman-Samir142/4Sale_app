@@ -11,6 +11,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
+from pydantic import BaseModel, Field, ValidationError
 
 from rag.vector_search import vector_search
 from rag.sql_generator import sql_search
@@ -18,6 +19,24 @@ from rag.sql_generator import sql_search
 logger = logging.getLogger(__name__)
 
 MAX_RESULTS = 15
+
+# ── Groq LLM Client (singleton) ───────────────────────────────
+
+_groq_client = None
+
+
+def _get_groq_client():
+    """Return a singleton OpenAI-compatible client pointed at Groq."""
+    global _groq_client
+    if _groq_client is None:
+        api_key = os.environ.get("GROQ_API_KEY", "").strip('"').strip("'")
+        if not api_key:
+            raise RuntimeError("GROQ_API_KEY environment variable is required for RAG synthesis")
+        _groq_client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1",
+        )
+    return _groq_client
 
 
 # ── Parallel Retrieval ─────────────────────────────────────
@@ -131,12 +150,8 @@ def synthesise_answer(query: str, merged_items: list) -> dict:
     context = "\n".join(context_lines)
 
     try:
-        api_key = os.environ.get("GROQ_API_KEY", "").strip('"').strip("'")
-        _client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.groq.com/openai/v1",
-        )
-        response = _client.chat.completions.create(
+        client = _get_groq_client()
+        response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": SYNTHESIS_PROMPT},
@@ -147,8 +162,28 @@ def synthesise_answer(query: str, merged_items: list) -> dict:
         )
         raw = response.choices[0].message.content.strip()
         raw = raw.replace("```json", "").replace("```", "").strip()
-        answer = json.loads(raw)
-        return answer
+        
+        class SynthesisResult(BaseModel):
+            summary: str = Field(default=f"la2etlak {len(merged_items)} nateega.")
+            items: list[int] = Field(default_factory=lambda: [item.get('id') or item.get('product_id') for item in merged_items])
+            suggested_action: str = Field(default="view_listing")
+        
+        # Parse and validate LLM JSON output with Pydantic
+        try:
+            answer_dict = json.loads(raw)
+            # Pydantic validation handles casting and structure
+            validated = SynthesisResult(**answer_dict)
+            
+            # Additional constraint enforcement for enum-like field
+            if validated.suggested_action not in {"view_listing", "place_bid", "compare_prices", "set_agent"}:
+                validated.suggested_action = "view_listing"
+                
+            return validated.model_dump()
+            
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.warning(f"[RAG/Synthesis] Validation failed ({e}). Raw: {raw[:300]}")
+            # Fallback output
+            return SynthesisResult().model_dump()
 
     except Exception as e:
         logger.error(f"[RAG/Synthesis] Failed: {e}")

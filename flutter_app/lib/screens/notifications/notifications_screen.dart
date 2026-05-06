@@ -178,7 +178,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 icon: const Icon(Icons.bug_report_rounded, color: Colors.white),
                 label: Text(
                   isAr ? 'إشعار تجريبي' : 'Test Notif',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                 ),
               )
             : null,

@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
+
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/auth_provider.dart';
-import '../../core/constants/app_colors.dart';
+
 import '../../core/widgets/app_logo.dart';
 
 /// Splash screen — branded entry point with auth + onboarding checks.
@@ -49,9 +49,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
-        child: Hero(
+        child: const Hero(
           tag: 'app-logo',
-          child: const AppLogo(scale: 1.8),
+          child: AppLogo(scale: 1.8),
         ).animate()
          .fadeIn(duration: 500.ms, curve: Curves.easeOut)
          .scaleXY(begin: 0.5, end: 1.0, duration: 800.ms, curve: Curves.elasticOut),

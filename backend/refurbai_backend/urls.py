@@ -5,6 +5,10 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Versioned API (canonical)
+    path('api/v1/', include('marketplace.urls')),
+    path('api/v1/rag/', include('rag.urls')),
+    # Backward-compatible unversioned routes (deprecated — remove in v2)
     path('api/', include('marketplace.urls')),
     path('api/rag/', include('rag.urls')),
 ]

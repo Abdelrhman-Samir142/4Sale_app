@@ -13,7 +13,7 @@ class ShellScreen extends ConsumerWidget {
   const ShellScreen({super.key, required this.child});
 
   static int _indexFromPath(String path) {
-    if (path.startsWith('/store')) return 0;
+    if (path == '/' || path.startsWith('/home')) return 0;
     if (path.startsWith('/auctions')) return 1;
     // index 2 is the center FAB (sell) – not a real tab
     if (path.startsWith('/messages')) return 3;
@@ -62,15 +62,15 @@ class ShellScreen extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _NavItem(
-                    icon: Icons.storefront_outlined,
-                    activeIcon: Icons.storefront_rounded,
-                    label: dict['nav']['shop'] as String,
+                    icon: Icons.home_outlined,
+                    activeIcon: Icons.home_rounded,
+                    label: dict['nav']['home'] as String,
                     isSelected: currentIndex == 0,
                     accentColor: AppColors.primary600,
                     onTap: () {
-                      debugPrint('Tapped Store icon from bottom nav! currentPath: $path');
+                      debugPrint('Tapped Home icon from bottom nav! currentPath: $path');
                       HapticFeedback.selectionClick();
-                      context.go('/store');
+                      context.go('/');
                     },
                   ),
                   _NavItem(

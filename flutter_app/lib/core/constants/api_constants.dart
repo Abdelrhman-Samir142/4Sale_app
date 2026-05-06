@@ -3,14 +3,20 @@ class ApiConstants {
   ApiConstants._();
 
   // ── Base URL ──────────────────────────────────────────────────
-  // Production: Render-hosted Django backend
-  static const String baseUrl = 'https://foursale-app.onrender.com/api';
+  // Override at build time: flutter run --dart-define=API_BASE_URL=https://your-domain.com/api/v1
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://4-sale-i4pb4pu1p-abdelrhman-samir142s-projects.vercel.app/api/v1',
+  );
 
   // ── Auth ──────────────────────────────────────────────────────
   static const String register = '/auth/register/';
   static const String login = '/auth/login/';
   static const String refreshToken = '/auth/refresh/';
   static const String currentUser = '/auth/me/';
+
+  // ── Categories ────────────────────────────────────────────────
+  static const String categories = '/categories/';
 
   // ── Products ──────────────────────────────────────────────────
   static const String products = '/products/';

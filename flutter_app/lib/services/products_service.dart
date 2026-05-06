@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../core/network/dio_client.dart';
 import '../core/constants/api_constants.dart';
 import '../models/product.dart';
@@ -137,6 +138,28 @@ class ProductsService {
       return response.data as Map<String, dynamic>;
     } on DioException catch (e) {
       throw Exception(parseDioError(e));
+    }
+  }
+
+  /// GET /categories/
+  static Future<List<Map<String, dynamic>>> getCategories() async {
+    try {
+      final response = await _dio.get(ApiConstants.categories);
+      debugPrint('[ProductsService] Categories response received');
+      
+      if (response.data is List) {
+        final list = response.data as List<dynamic>;
+        return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      } else {
+        debugPrint('[ProductsService] Categories: non-list data');
+        return [];
+      }
+    } on DioException catch (e) {
+      debugPrint('[ProductsService] Categories DioError: ${e.response?.statusCode}');
+      throw Exception(parseDioError(e));
+    } catch (e) {
+      debugPrint('[ProductsService] Categories error: $e');
+      return [];
     }
   }
 }

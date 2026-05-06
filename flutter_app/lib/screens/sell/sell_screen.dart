@@ -25,7 +25,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   final _priceC = TextEditingController();
   final _locationC = TextEditingController();
   final _phoneC = TextEditingController();
-  String _category = 'electronics';
+  String? _selectedCategoryId;
   String _condition = 'good';
   bool _isAuction = false;
   DateTime? _auctionEnd;
@@ -33,8 +33,32 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   String? _aiCategory;
   bool _loading = false;
   String? _error;
+  List<Map<String, dynamic>> _categories = [];
+  bool _isLoadingCategories = true;
 
   final _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCategories();
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final categories = await ProductsService.getCategories();
+      if (mounted) {
+        setState(() {
+          _categories = categories;
+          _isLoadingCategories = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingCategories = false);
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -65,8 +89,11 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         try {
           final result = await ClassifyService.classifyImage(_images.first.path);
           setState(() {
-            _aiCategory = result['category'] as String?;
-            if (_aiCategory != null) _category = _aiCategory!;
+            _aiCategory = result['category']?.toString();
+            if (_aiCategory != null) {
+              final match = _categories.where((c) => c['id'].toString() == _aiCategory).firstOrNull;
+              if (match != null) _selectedCategoryId = match['id'].toString();
+            }
           });
         } catch (e) {
           if (mounted) {
@@ -94,13 +121,21 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       return;
     }
 
+    if (_selectedCategoryId == null) {
+      AppSnackbar.error(
+        context,
+        ref.read(languageProvider).locale == 'ar' ? 'يرجى اختيار تصنيف' : 'Please select a category',
+      );
+      return;
+    }
+
     setState(() { _loading = true; _error = null; });
     try {
       await ProductsService.create(
         title: _titleC.text.trim(),
         description: _descC.text.trim(),
         price: priceVal,
-        category: _category,
+        category: _selectedCategoryId!,
         condition: _condition,
         location: _locationC.text.trim(),
         phoneNumber: _phoneC.text.trim(),
@@ -447,13 +482,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
           Icons.attach_money_rounded, reqMsg, keyboardType: TextInputType.number,
           suffix: lang.dict['currency'] as String),
       SizedBox(height: 14.h),
-      _styledDropdown(dict['category'] as String, Icons.category_outlined, _category,
-          [
-            DropdownMenuItem(value: 'electronics', child: Text(dict['electronics'] as String)),
-            DropdownMenuItem(value: 'furniture', child: Text(dict['furniture'] as String)),
-            DropdownMenuItem(value: 'scrap_metals', child: Text(dict['scrap'] as String)),
-            DropdownMenuItem(value: 'other', child: Text(dict['other'] as String)),
-          ], (v) => setState(() => _category = v!)),
+      _buildCategorySelector(dict, lang),
       SizedBox(height: 14.h),
       _styledDropdown(dict['condition'] as String, Icons.verified_outlined, _condition,
           [
@@ -625,7 +654,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         child: Column(children: [
           _summaryRow(dict['productName'] as String, _titleC.text),
           _summaryRow(dict['expectedPrice'] as String, '${_priceC.text} ${lang.dict['currency']}'),
-          _summaryRow(dict['category'] as String, _category),
+          _summaryRow(dict['category'] as String, _selectedCategoryId != null ? (_categories.firstWhere((c) => c['id'].toString() == _selectedCategoryId, orElse: () => {'name': _selectedCategoryId!})['name'] as String) : '-'),
           _summaryRow(dict['condition'] as String, _condition),
           _summaryRow(dict['location'] as String, _locationC.text),
           _summaryRow(dict['uploadImages'] as String,
@@ -683,6 +712,47 @@ class _SellScreenState extends ConsumerState<SellScreen> {
           ),
         ),
       ]),
+    );
+  }
+
+  Widget _buildCategorySelector(Map<String, dynamic> dict, LanguageState lang) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14.r),
+        boxShadow: [BoxShadow(color: Colors.black.withAlpha(6), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: DropdownButtonFormField<String>(
+        initialValue: _categories.any((c) => c['id'].toString() == _selectedCategoryId) ? _selectedCategoryId : null,
+        decoration: InputDecoration(
+          labelText: lang.locale == 'ar' ? 'اختر التصنيف *' : 'Select Category *',
+          labelStyle: TextStyle(fontSize: 14.sp, color: AppColors.slate500),
+          prefixIcon: _isLoadingCategories 
+              ? Padding(padding: EdgeInsets.all(12.w), child: SizedBox(width: 16.w, height: 16.w, child: const CircularProgressIndicator(strokeWidth: 2)))
+              : Icon(Icons.category_outlined, size: 20.w, color: AppColors.primary600),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14.r), borderSide: BorderSide.none),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+        ),
+        style: TextStyle(fontSize: 14.sp, color: AppColors.slate800),
+        items: _categories.isEmpty 
+            ? null 
+            : _categories.map((cat) {
+                return DropdownMenuItem<String>(
+                  value: cat['id'].toString(),
+                  child: Text(cat['name'].toString()),
+                );
+              }).toList(),
+        onChanged: _categories.isEmpty ? null : (value) {
+          setState(() {
+            _selectedCategoryId = value;
+          });
+        },
+        validator: (value) => value == null || value.isEmpty
+            ? (lang.locale == 'ar' ? 'يرجى اختيار تصنيف' : 'Please select a category')
+            : null,
+      ),
     );
   }
 }

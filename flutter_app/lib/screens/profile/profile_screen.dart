@@ -372,7 +372,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       ),
                     ],
                   ),
-                  Icon(Icons.more_horiz_rounded, color: AppColors.slate400),
+                  const Icon(Icons.more_horiz_rounded, color: AppColors.slate400),
                 ],
               ),
               SizedBox(height: 16.h),
@@ -839,7 +839,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text(isAr ? 'إلغاء' : 'Cancel', style: TextStyle(color: AppColors.slate500, fontWeight: FontWeight.bold)),
+              child: Text(isAr ? 'إلغاء' : 'Cancel', style: const TextStyle(color: AppColors.slate500, fontWeight: FontWeight.bold)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -997,7 +997,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
               Container(
                 padding: EdgeInsets.all(8.w),
-                decoration: BoxDecoration(color: AppColors.slate50, shape: BoxShape.circle),
+                decoration: const BoxDecoration(color: AppColors.slate50, shape: BoxShape.circle),
                 child: Icon(Icons.chevron_right_rounded, size: 20.w, color: AppColors.slate400),
               ),
             ],

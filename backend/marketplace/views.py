@@ -1,5 +1,5 @@
 from rest_framework import viewsets, status, filters
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -50,8 +50,8 @@ def send_winner_message(auction):
             content=f'🎉 تهانينا! لقد فزت بالمزاد على "{auction.product.title}" بمبلغ {auction.current_bid} جنيه. تواصل مع البائع لإتمام عملية الشراء.'
         )
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import logging
+        logging.getLogger(__name__).error(f"[Auction] Failed to send winner message: {e}", exc_info=True)
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
@@ -71,11 +71,15 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         
         return super().validate(attrs)
 
+from .throttles import LoginRateThrottle, RegisterRateThrottle
+
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+    throttle_classes = [LoginRateThrottle]
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([RegisterRateThrottle])
 def register_view(request):
     """User registration endpoint"""
     serializer = RegisterSerializer(data=request.data)
@@ -147,10 +151,12 @@ class ProductViewSet(viewsets.ModelViewSet):
         return queryset
     
     def retrieve(self, request, *args, **kwargs):
-        """Increment views count on product detail view"""
+        """Increment views count on product detail view (atomic)"""
         instance = self.get_object()
-        instance.views_count += 1
-        instance.save(update_fields=['views_count'])
+        Product.objects.filter(pk=instance.pk).update(
+            views_count=models.F('views_count') + 1
+        )
+        instance.refresh_from_db(fields=['views_count'])
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
     
@@ -175,8 +181,9 @@ class AuctionViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
     
     def get_queryset(self):
-        # Auto-close expired auctions first
-        close_expired_auctions()
+        # NOTE: close_expired_auctions() removed from here — it was running
+        # a full table scan + writes on every list request. Use a Celery
+        # periodic task or management command instead (see marketplace/tasks.py).
         
         queryset = super().get_queryset()
         
@@ -189,58 +196,64 @@ class AuctionViewSet(viewsets.ReadOnlyModelViewSet):
     
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def place_bid(self, request, pk=None):
-        """Place a bid on an auction"""
-        auction = self.get_object()
+        """Place a bid on an auction (atomic + row-level lock)"""
+        from django.db import transaction
+
+        with transaction.atomic():
+            # Lock the auction row — no other bid can read it until we commit
+            auction = Auction.objects.select_for_update().get(pk=pk)
+
+            # Validation
+            if not auction.is_active:
+                return Response({'error': 'المزاد غير نشط'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if auction.end_time < timezone.now():
+                # Auto-close this auction
+                auction.is_active = False
+                auction.save(update_fields=['is_active'])
+                auction.product.status = 'sold'
+                auction.product.save(update_fields=['status'])
+                if auction.highest_bidder:
+                    send_winner_message(auction)
+                return Response({'error': 'المزاد انتهى'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if auction.product.owner == request.user:
+                return Response({'error': 'لا يمكنك المزايدة على مزادك الخاص'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            amount = Decimal(str(request.data.get('amount', 0)))
+            
+            if amount <= auction.current_bid:
+                return Response({
+                    'error': f'يجب أن تكون المزايدة أعلى من السعر الحالي ({auction.current_bid} جنيه)'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create bid
+            bid = Bid.objects.create(
+                auction=auction,
+                bidder=request.user,
+                amount=amount
+            )
+            
+            # Update auction
+            auction.current_bid = amount
+            auction.highest_bidder = request.user
+            auction.save(update_fields=['current_bid', 'highest_bidder'])
         
-        # Validation
-        if not auction.is_active:
-            return Response({'error': 'المزاد غير نشط'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if auction.end_time < timezone.now():
-            # Auto-close this auction
-            auction.is_active = False
-            auction.save(update_fields=['is_active'])
-            auction.product.status = 'sold'
-            auction.product.save(update_fields=['status'])
-            if auction.highest_bidder:
-                send_winner_message(auction)
-            return Response({'error': 'المزاد انتهى'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if auction.product.owner == request.user:
-            return Response({'error': 'لا يمكنك المزايدة على مزادك الخاص'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        amount = Decimal(str(request.data.get('amount', 0)))
-        
-        if amount <= auction.current_bid:
-            return Response({
-                'error': f'يجب أن تكون المزايدة أعلى من السعر الحالي ({auction.current_bid} جنيه)'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Create bid
-        bid = Bid.objects.create(
-            auction=auction,
-            bidder=request.user,
-            amount=amount
-        )
-        
-        # Update auction
-        auction.current_bid = amount
-        auction.highest_bidder = request.user
-        auction.save()
-        
-        # ── Agent Counter-Bid (Asynchronous) ────────────────
-        import threading
-        from .serializers import agent_counter_bid_async
+        # Agent counter-bid runs OUTSIDE the transaction to avoid long locks
         try:
+            from .tasks import agent_counter_bid_celery
+            agent_counter_bid_celery.delay(auction.id, request.user.id)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"[Agent] Celery counter-bid failed, using Thread: {e}")
+            import threading
+            from .serializers import agent_counter_bid_async
             threading.Thread(
                 target=agent_counter_bid_async,
                 args=(auction.id, request.user.id),
                 daemon=True
             ).start()
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"[Agent] Counter-bid thread error: {e}")
-        # ───────────────────────────────────────────────────
         
         return Response(BidSerializer(bid).data, status=status.HTTP_201_CREATED)
 
@@ -412,6 +425,19 @@ def get_general_stats(request):
 
 
 @api_view(['GET'])
+@permission_classes([AllowAny])
+def get_categories(request):
+    """
+    Get all available product categories based on Product model choices.
+    """
+    categories = [
+        {'id': choice[0], 'name': choice[1]}
+        for choice in Product.CATEGORY_CHOICES
+    ]
+    return Response(categories)
+
+
+@api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def wishlist_list(request):
     """Get user's wishlist products"""
@@ -497,6 +523,23 @@ def classify_image_view(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # ── File size check (max 5 MB) ─────────────────────────────
+    MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5 MB
+    if image_file.size > MAX_UPLOAD_SIZE:
+        return Response(
+            {'error': 'Image too large. Maximum size is 5 MB.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── MIME type validation ───────────────────────────────────
+    ALLOWED_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/jpg'}
+    content_type = image_file.content_type
+    if content_type not in ALLOWED_CONTENT_TYPES:
+        return Response(
+            {'error': f'Invalid file type "{content_type}". Only JPEG, PNG, and WebP are allowed.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     import tempfile
     import os
     from ai.classifier import classify_image
@@ -574,3 +617,40 @@ def notifications_unread_count(request):
     count = Notification.objects.filter(user=request.user, is_read=False).count()
     return Response({'unread_count': count})
 
+
+# ──────────────────────────────────────────────────────────────
+# HEALTH CHECK
+# ──────────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    """
+    GET /api/health/
+    Returns system health for load balancers and monitoring.
+    No authentication required.
+    """
+    from django.db import connection
+    import time
+
+    health = {
+        'status': 'ok',
+        'version': '1.0.0',
+        'database': 'unknown',
+    }
+
+    # Check database connectivity
+    try:
+        start = time.time()
+        connection.ensure_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        db_latency_ms = int((time.time() - start) * 1000)
+        health['database'] = 'ok'
+        health['db_latency_ms'] = db_latency_ms
+    except Exception as e:
+        health['status'] = 'degraded'
+        health['database'] = f'error: {str(e)}'
+
+    http_status = 200 if health['status'] == 'ok' else 503
+    return Response(health, status=http_status)

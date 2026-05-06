@@ -1,9 +1,12 @@
 import os
+import logging
 from typing import TypedDict
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
+
+logger = logging.getLogger(__name__)
 
 # Define Schema for LLM output
 class EvaluationResult(BaseModel):
@@ -81,9 +84,7 @@ Does this product specifically and strongly match the user's requirements? Reply
             "reason": result.reason
         }
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"[AgentGraph] Groq Evaluation Failed: {e}")
+        logger.error(f"[AgentGraph] Groq Evaluation Failed: {e}", exc_info=True)
         # Default to False for safety
         return {
             "is_match": False, 

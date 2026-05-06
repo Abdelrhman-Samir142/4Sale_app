@@ -1,5 +1,5 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import DefaultRouter, SimpleRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
@@ -21,6 +21,14 @@ from .views import (
     notifications_list,
     notifications_mark_read,
     notifications_unread_count,
+    get_categories,
+    health_check,
+)
+from .admin_views import (
+    AdminProductViewSet,
+    AdminAuctionViewSet,
+    AdminUserViewSet,
+    admin_stats,
 )
 
 router = DefaultRouter()
@@ -30,6 +38,12 @@ router.register(r'profiles', UserProfileViewSet, basename='profile')
 router.register(r'conversations', ConversationViewSet, basename='conversation')
 router.register(r'agents', UserAgentViewSet, basename='agent')
 
+# Admin-only router (all viewsets enforce IsAdminUser)
+admin_router = SimpleRouter()
+admin_router.register(r'products', AdminProductViewSet, basename='admin-product')
+admin_router.register(r'auctions', AdminAuctionViewSet, basename='admin-auction')
+admin_router.register(r'users', AdminUserViewSet, basename='admin-user')
+
 urlpatterns = [
     # Authentication endpoints
     path('auth/register/', register_view, name='register'),
@@ -37,6 +51,9 @@ urlpatterns = [
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', current_user_view, name='current_user'),
     path('general-stats/', get_general_stats, name='general-stats'),
+    
+    # Categories endpoint
+    path('categories/', get_categories, name='categories'),
     
     # Wishlist endpoints
     path('wishlist/', wishlist_list, name='wishlist-list'),
@@ -57,6 +74,11 @@ urlpatterns = [
     
     # Router URLs
     path('', include(router.urls)),
+
+    # Health check — for load balancers and monitoring
+    path('health/', health_check, name='health-check'),
+
+    # Admin-only API (IsAdminUser enforced server-side)
+    path('admin-api/stats/', admin_stats, name='admin-stats'),
+    path('admin-api/', include(admin_router.urls)),
 ]
-
-

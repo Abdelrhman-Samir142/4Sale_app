@@ -111,6 +111,7 @@ def _lookup_category(class_name: str):
 def classify_image(image_path: str) -> dict:
     """
     Run inference on an image via an external Hugging Face Space API.
+    Timeout: 25s to prevent cold-start blocking.
     """
     fallback = {
         'category': 'other',
@@ -125,25 +126,44 @@ def classify_image(image_path: str) -> dict:
         return fallback
 
     # If the image path is actually a Cloudinary URL, gradio_client can handle it directly!
-    # Sometimes image.path raises NotImplementedError, so we fallback to image.url
     is_url = image_path.startswith("http://") or image_path.startswith("https://")
 
     try:
         from gradio_client import Client, handle_file
+        import concurrent.futures
         
         # Connect to HF Space API
         client = Client(hf_space_url)
         
         target_file = handle_file(image_path)
         
-        result_class = client.predict(
-            image=target_file,
-            api_name="/predict"
-        )
+        # Run prediction with a 25s timeout to avoid cold-start blocking
+        HF_PREDICT_TIMEOUT = 25  # seconds
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                client.predict, image=target_file, api_name="/predict"
+            )
+            try:
+                result_class = future.result(timeout=HF_PREDICT_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                logger.warning(f"[AI] HF Space prediction timed out after {HF_PREDICT_TIMEOUT}s")
+                return {**fallback, 'error': 'Classification service timeout — try again.'}
         
         best_class = str(result_class).strip()
+        confidence = 0.85  # Conservative default if HF Space doesn't return confidence
         
-        print(f"[AI] 🔍 Hugging Face API returned YOLO class: '{best_class}'")
+        # HF Space may return (class_name, confidence) tuple or just class_name
+        if isinstance(result_class, (list, tuple)) and len(result_class) >= 2:
+            best_class = str(result_class[0]).strip()
+            try:
+                confidence = float(result_class[1])
+            except (ValueError, TypeError):
+                pass  # Keep conservative default
+        elif isinstance(result_class, dict):
+            best_class = str(result_class.get('label', result_class.get('class', ''))).strip()
+            confidence = float(result_class.get('confidence', result_class.get('score', 0.85)))
+        
+        logger.info(f"[AI] HF API returned YOLO class: '{best_class}' (confidence: {confidence:.2f})")
         
         arabic_label = _lookup_category(best_class)
         
@@ -152,18 +172,15 @@ def classify_image(image_path: str) -> dict:
             return fallback
 
         category_id = ARABIC_TO_CATEGORY_ID.get(arabic_label, 'other')
-        print(f"[AI] ✅ Result: '{best_class}' → '{arabic_label}' ({category_id})")
+        logger.info(f"[AI] Result: '{best_class}' → '{arabic_label}' ({category_id})")
 
         return {
             'category': category_id,
             'category_label': arabic_label,
-            'confidence': 0.95, # Mock confidence for external API
+            'confidence': round(confidence, 4),
             'detected_class': best_class,
         }
 
     except Exception as e:
         logger.error(f"Hugging Face inference error: {e}")
         return fallback
-
-
-

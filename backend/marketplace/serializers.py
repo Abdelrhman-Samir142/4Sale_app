@@ -201,12 +201,15 @@ def run_auto_bidding(auction, detected_item):
     if not potential_agents:
         return
     
-    # --- LLM Evaluation Step ---
+    # --- LLM Evaluation Step (PARALLEL) ---
     from ai.agent_graph import smart_agent_evaluator
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
     matching_agents = []
     product = auction.product
-    
-    for agent in potential_agents:
+
+    def _evaluate_single_agent(agent):
+        """Evaluate one agent against the product — runs in thread pool."""
         if agent.requirements_prompt.strip():
             logger.info(f"[AgentGraph] Evaluating agent {agent.user.username} requirements...")
             eval_result = smart_agent_evaluator.invoke({
@@ -219,20 +222,27 @@ def run_auto_bidding(auction, detected_item):
             
             reason = eval_result.get("reason", "") if isinstance(eval_result, dict) else getattr(eval_result, 'reason', '')
             is_match = eval_result.get("is_match", False) if isinstance(eval_result, dict) else getattr(eval_result, 'is_match', False)
-
-            if is_match:
-                logger.info(f"[AgentGraph] MATCH: {reason}")
-                # Store reasoning on the agent object temporarily for notification
-                agent._ai_reasoning = reason
-                matching_agents.append(agent)
-            else:
-                logger.info(f"[AgentGraph] REJECT: {reason}")
-                # Send a rejection notification so the user knows why it didn't bid
-                _notify_agent_rejection(agent, product, reason)
+            return agent, is_match, reason
         else:
             # No specific requirements, automatically match
-            agent._ai_reasoning = "طابق الفئة المطلوبة (تلقائي)"
-            matching_agents.append(agent)
+            return agent, True, "طابق الفئة المطلوبة (تلقائي)"
+
+    # Run evaluations in parallel (max 5 concurrent LLM calls)
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_evaluate_single_agent, agent): agent for agent in potential_agents}
+        for future in as_completed(futures):
+            try:
+                agent, is_match, reason = future.result(timeout=30)
+                if is_match:
+                    logger.info(f"[AgentGraph] MATCH: {reason}")
+                    agent._ai_reasoning = reason
+                    matching_agents.append(agent)
+                else:
+                    logger.info(f"[AgentGraph] REJECT: {reason}")
+                    _notify_agent_rejection(agent, product, reason)
+            except Exception as e:
+                failed_agent = futures[future]
+                logger.error(f"[AgentGraph] Evaluation failed for {failed_agent.user.username}: {e}")
             
     # Sort agents by budget for the bidding war logic
     matching_agents.sort(key=lambda a: a.max_budget, reverse=True)
@@ -375,27 +385,33 @@ def _notify_agent_rejection(agent, product, reason):
 
 
 BID_INCREMENT = 50  # Agent counter-bid increment in EGP
+MAX_COUNTER_BID_ROUNDS = 3  # Hard limit to prevent infinite agent-vs-agent loops
 
 
-def agent_counter_bid_async(auction_id, manual_bidder_id):
+def agent_counter_bid_async(auction_id, manual_bidder_id, round_number=1):
     """Wrapper to run agent counter-bidding in a background thread."""
     from .models import Auction
     from django.contrib.auth.models import User
     try:
         auction = Auction.objects.get(id=auction_id)
         manual_bidder = User.objects.get(id=manual_bidder_id)
-        agent_counter_bid(auction, manual_bidder)
+        agent_counter_bid(auction, manual_bidder, round_number=round_number)
     except Exception as e:
         logger.error(f"[Agent] Async counter-bid error: {e}")
     finally:
         connection.close()
 
-def agent_counter_bid(auction, manual_bidder):
+def agent_counter_bid(auction, manual_bidder, round_number=1):
     """
     Called AFTER a manual bid is placed.
     Find active agents targeting this product's detected item and
     auto-counter-bid by BID_INCREMENT, as long as max_budget allows.
+    
+    round_number: Guards against infinite loops. Max 3 rounds per auction event.
     """
+    if round_number > MAX_COUNTER_BID_ROUNDS:
+        logger.info(f"[Agent] ⛔ Max counter-bid rounds ({MAX_COUNTER_BID_ROUNDS}) reached. Stopping.")
+        return
     product = auction.product
     detected_item = product.detected_item
 
@@ -528,18 +544,23 @@ class ProductCreateSerializer(serializers.ModelSerializer):
                             product.detected_item = detected_item
                             product.save(update_fields=['detected_item'])
                             logger.info(f"[Agent] 🔍 Detected '{detected_item}' — checking agents...")
-                            # Start background thread for AI evaluation and bidding
-                            threading.Thread(
-                                target=run_auto_bidding_async,
-                                args=(auction.id, detected_item),
-                                daemon=True
-                            ).start()
-                            logger.info(f"[Agent] 🚀 Started background agent thread for '{detected_item}'")
+                            # Start Celery task for AI evaluation and bidding
+                            try:
+                                from .tasks import run_auto_bidding_celery
+                                run_auto_bidding_celery.delay(auction.id, detected_item)
+                                logger.info(f"[Agent] 🚀 Dispatched Celery task for '{detected_item}'")
+                            except Exception as celery_err:
+                                # Fallback to thread if celery is not running/imported
+                                logger.warning(f"[Agent] Celery dispatch failed, using Thread: {celery_err}")
+                                import threading
+                                threading.Thread(
+                                    target=run_auto_bidding_async,
+                                    args=(auction.id, detected_item),
+                                    daemon=True
+                                ).start()
                 except Exception as e:
                     # Agent failure should NOT block product creation
-                    logger.error(f"[Agent] Auto-bidding error (non-blocking): {e}")
-                    import traceback
-                    traceback.print_exc()
+                    logger.error(f"[Agent] Auto-bidding error (non-blocking): {e}", exc_info=True)
             # ──────────────────────────────────────────────────
             
             return product
@@ -547,8 +568,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             if 'product' in locals():
                 product.delete()
             # Log error for server-side debugging
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[ProductCreate] Server error: {e}", exc_info=True)
             # Return error to client
             raise serializers.ValidationError({"detail": f"Server Error: {str(e)}"})
 
@@ -556,8 +576,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         try:
             return super().to_representation(instance)
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[ProductCreate] Serialization error: {e}", exc_info=True)
             return {
                 "id": instance.id, 
                 "title": instance.title, 

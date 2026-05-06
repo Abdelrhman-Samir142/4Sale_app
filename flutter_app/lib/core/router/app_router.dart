@@ -236,6 +236,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/admin',
         name: 'admin',
+        redirect: (context, state) {
+          final auth = ref.read(authProvider);
+          if (!auth.isLoggedIn) return '/login';
+          if (!auth.isAdmin) return '/';  // Non-admins bounced to home
+          return null;
+        },
         builder: (context, state) => const AdminDashboardScreen(),
       ),
       GoRoute(

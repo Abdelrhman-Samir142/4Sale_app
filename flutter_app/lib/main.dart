@@ -30,14 +30,14 @@ void main() async {
   // Log uncaught Flutter framework errors
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    // TODO: Send to crash reporting (Sentry / Crashlytics)
+    // NOTE: In production, integrate Sentry or Firebase Crashlytics here.
     debugPrint('[FlutterError] ${details.exceptionAsString()}');
   };
 
   // Log uncaught platform/async errors
   PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
     debugPrint('[PlatformError] $error\n$stack');
-    // TODO: Send to crash reporting (Sentry / Crashlytics)
+    // NOTE: In production, integrate Sentry or Firebase Crashlytics here.
     return true;
   };
 

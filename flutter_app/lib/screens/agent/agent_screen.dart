@@ -902,7 +902,7 @@ class _AgentCardState extends State<_AgentCard>
                     child: Switch.adaptive(
                       value: isActive,
                       onChanged: widget.onToggle,
-                      activeColor: const Color(0xFF7C3AED),
+                      activeThumbColor: const Color(0xFF7C3AED),
                       activeTrackColor:
                           const Color(0xFF7C3AED).withAlpha(40),
                     ),
