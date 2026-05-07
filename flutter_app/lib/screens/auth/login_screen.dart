@@ -6,7 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../core/utils/app_snackbar.dart';
-import '../../widgets/language_toggle_widget.dart';
+import '../../shared/widgets/language_toggle_widget.dart';
 import '../../core/widgets/app_logo.dart';
 // ── Premium Light Theme Constants ──────────────────────────────────
 const Color _bgLight = Colors.white; 

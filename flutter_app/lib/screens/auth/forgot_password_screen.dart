@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/language_provider.dart';
-import '../../widgets/language_toggle_widget.dart';
+import '../../shared/widgets/language_toggle_widget.dart';
 import '../../core/widgets/app_logo.dart';
 // ── Premium Light Theme Constants ──────────────────────────────────
 const Color _bgLight = Colors.white; 

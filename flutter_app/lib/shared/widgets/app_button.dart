@@ -3,7 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/app_radius.dart';
-import '../../widgets/animated_press_wrapper.dart';
+import 'animated_press_wrapper.dart';
 
 enum AppButtonVariant { primary, secondary, outlined, text }
 
