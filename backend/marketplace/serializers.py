@@ -82,18 +82,31 @@ class ProductListSerializer(serializers.ModelSerializer):
     """Lightweight product serializer for list views"""
     owner_name = serializers.CharField(source='owner.username', read_only=True)
     owner_id = serializers.IntegerField(source='owner.id', read_only=True)
+    seller = serializers.SerializerMethodField()
     primary_image = serializers.SerializerMethodField()
     is_auction = serializers.BooleanField(read_only=True)
     
     class Meta:
         model = Product
         fields = [
-            'id', 'title', 'price', 'category', 'condition', 'status',
+            'id', 'title', 'description', 'price', 'category', 'condition', 'status',
             'location', 'phone_number', 'is_auction',
-            'auction_end_time', 'primary_image', 'owner_name', 'owner_id', 'views_count', 'created_at'
+            'auction_end_time', 'primary_image', 'owner_name', 'owner_id', 'seller', 'views_count', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'owner_name', 'owner_id', 'views_count', 'created_at']
+        read_only_fields = ['id', 'owner_name', 'owner_id', 'seller', 'views_count', 'created_at', 'updated_at']
     
+    def get_seller(self, obj):
+        try:
+            return {
+                'id': obj.owner.id,
+                'username': obj.owner.username,
+                'first_name': obj.owner.first_name,
+                'last_name': obj.owner.last_name,
+                'trust_score': getattr(obj.owner.profile, 'trust_score', 0.0) if hasattr(obj.owner, 'profile') else 0.0
+            }
+        except Exception:
+            return None
+
     def get_primary_image(self, obj):
         primary_img = obj.images.filter(is_primary=True).first()
         if primary_img:
