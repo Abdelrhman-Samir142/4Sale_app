@@ -1,242 +1,133 @@
 """
-Hybrid RAG Engine - the heart of the system.
+Hybrid RAG Engine (V2 - LangGraph)
 
-Orchestrates parallel retrieval from both tracks (Vector + SQL),
-merges results by product ID, and synthesises a final answer with Gemini.
+Orchestrates the entire RAG pipeline using LangGraph:
+1. Cache check (LRU)
+2. LangGraph Agent (.invoke)
+   - Zero-LLM Intent Routing
+   - Follow-up logic
+   - Parallel Retrieval (Vector + SQL)
+   - Reciprocal Rank Fusion
+   - LLM Synthesis + Guardrails
+3. Cache Set
+4. Logging to RAGQueryLog
 """
 
-import os
 import time
-import json
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from openai import OpenAI
-from pydantic import BaseModel, Field, ValidationError
+from langchain_core.runnables import RunnableConfig
 
-from rag.vector_search import vector_search
-from rag.sql_generator import sql_search
+from rag.response_cache import _cache
+from rag.graph.rag_graph import get_rag_agent
 
 logger = logging.getLogger(__name__)
 
-MAX_RESULTS = 15
 
-# ── Groq LLM Client (singleton) ───────────────────────────────
-
-_groq_client = None
-
-
-def _get_groq_client():
-    """Return a singleton OpenAI-compatible client pointed at Groq."""
-    global _groq_client
-    if _groq_client is None:
-        api_key = os.environ.get("GROQ_API_KEY", "").strip('"').strip("'")
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY environment variable is required for RAG synthesis")
-        _groq_client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.groq.com/openai/v1",
-        )
-    return _groq_client
-
-
-# ── Parallel Retrieval ─────────────────────────────────────
-
-def retrieve_hybrid(query: str) -> dict:
+def rag_query(query: str, user=None, request=None, history: list = None) -> dict:
     """
-    Run vector search and SQL search in parallel using ThreadPoolExecutor.
-    Merge results by product_id, capping at MAX_RESULTS.
-    SQL matches are prioritised for precision.
-    """
-    vector_results = []
-    sql_results = []
-    generated_sql = ""
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {
-            executor.submit(vector_search, query, MAX_RESULTS): 'vector',
-            executor.submit(sql_search, query): 'sql',
-        }
-        for future in as_completed(futures):
-            track = futures[future]
-            try:
-                result = future.result()
-                if track == 'vector':
-                    vector_results = result
-                elif track == 'sql':
-                    sql_results, generated_sql = result
-            except Exception as e:
-                logger.error(f"[RAG/Hybrid] {track} track failed: {e}")
-
-    # ── Merge by product_id ────────────────────────────────
-    seen_ids = set()
-    merged = []
-
-    # SQL first (higher precision)
-    for item in sql_results:
-        pid = item.get('id') or item.get('product_id')
-        if pid and pid not in seen_ids:
-            seen_ids.add(pid)
-            item['_source'] = 'sql'
-            merged.append(item)
-
-    # Then vector results (semantic relevance)
-    for item in vector_results:
-        pid = item.get('product_id') or item.get('id')
-        if pid and pid not in seen_ids:
-            seen_ids.add(pid)
-            item['_source'] = 'vector'
-            merged.append(item)
-
-    merged = merged[:MAX_RESULTS]
-
-    logger.info(
-        f"[RAG/Hybrid] Merged: {len(merged)} items "
-        f"(SQL={len(sql_results)}, Vector={len(vector_results)})"
-    )
-
-    return {
-        "merged_items": merged,
-        "vector_count": len(vector_results),
-        "sql_count": len(sql_results),
-        "generated_sql": generated_sql,
-    }
-
-
-# ── Final Answer Synthesis ─────────────────────────────────
-
-SYNTHESIS_PROMPT = """You are a smart assistant for "4sale" - an Egyptian marketplace for scrap and used items.
-
-Your job: take search results and summarize them for the user in Egyptian Arabic (3ammeya).
-
-RULES:
-1. Reply in Egyptian Arabic colloquial (not formal Arabic).
-2. Never make up information - only use what's in the results.
-3. If results are empty, say "mafesh nata2eg delwa2ty."
-4. Suggest an appropriate action (view_listing, place_bid, compare_prices, set_agent).
-
-Reply in JSON ONLY (no extra text):
-{
-  "summary": "Egyptian Arabic summary of results",
-  "items": [list of product IDs],
-  "suggested_action": "view_listing | place_bid | compare_prices | set_agent"
-}
-"""
-
-
-def synthesise_answer(query: str, merged_items: list) -> dict:
-    """Use Gemini to generate a final Egyptian-Arabic answer from merged results."""
-    if not merged_items:
-        return {
-            "summary": "mafesh nata2eg delwa2ty tTabe2 elly btdawwar 3aleeh. garrab tdawwar bkelmat tanya.",
-            "items": [],
-            "suggested_action": "set_agent",
-        }
-
-    # Build concise context for the LLM
-    context_lines = []
-    for item in merged_items:
-        pid = item.get('id') or item.get('product_id')
-        title = item.get('title', '')
-        price = item.get('price', '?')
-        condition = item.get('condition', '')
-        location = item.get('location', '')
-        is_auction = item.get('is_auction', False)
-
-        line = f"- #{pid}: {title} | {price} EGP | {condition} | {location}"
-        if is_auction:
-            line += " | AUCTION"
-        context_lines.append(line)
-
-    context = "\n".join(context_lines)
-
-    try:
-        client = _get_groq_client()
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": SYNTHESIS_PROMPT},
-                {"role": "user", "content": f"User question: {query}\n\nResults:\n{context}"},
-            ],
-            temperature=0.3,
-            max_tokens=600,
-        )
-        raw = response.choices[0].message.content.strip()
-        raw = raw.replace("```json", "").replace("```", "").strip()
-        
-        class SynthesisResult(BaseModel):
-            summary: str = Field(default=f"la2etlak {len(merged_items)} nateega.")
-            items: list[int] = Field(default_factory=lambda: [item.get('id') or item.get('product_id') for item in merged_items])
-            suggested_action: str = Field(default="view_listing")
-        
-        # Parse and validate LLM JSON output with Pydantic
-        try:
-            answer_dict = json.loads(raw)
-            # Pydantic validation handles casting and structure
-            validated = SynthesisResult(**answer_dict)
-            
-            # Additional constraint enforcement for enum-like field
-            if validated.suggested_action not in {"view_listing", "place_bid", "compare_prices", "set_agent"}:
-                validated.suggested_action = "view_listing"
-                
-            return validated.model_dump()
-            
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.warning(f"[RAG/Synthesis] Validation failed ({e}). Raw: {raw[:300]}")
-            # Fallback output
-            return SynthesisResult().model_dump()
-
-    except Exception as e:
-        logger.error(f"[RAG/Synthesis] Failed: {e}")
-        item_ids = [
-            item.get('id') or item.get('product_id')
-            for item in merged_items
-        ]
-        return {
-            "summary": f"la2etlak {len(merged_items)} nateega. etfaddal boss 3alehom.",
-            "items": [i for i in item_ids if i],
-            "suggested_action": "view_listing",
-        }
-
-
-# ── Main Entry Point ───────────────────────────────────────
-
-def rag_query(query: str, user=None) -> dict:
-    """
-    Full RAG pipeline:
-    1. Parallel retrieval (vector + SQL)
-    2. Merge results
-    3. LLM synthesis
-    4. Log the query
+    Main entry point for the API view.
+    Checks cache, runs the LangGraph pipeline if needed, and logs the query.
     """
     from rag.models import RAGQueryLog
 
-    start = time.time()
+    start_time = time.time()
+    user_id = user.id if user and user.is_authenticated else 0
+    history = history or []
     error_msg = ""
+    cache_hit = False
+
+    # 1. Cache Check
+    cached_response = _cache.get(query, user_id=user_id)
+    if cached_response:
+        logger.info(f"[HybridEngine] Cache hit for query: {query[:40]}")
+        cache_hit = True
+        final_data = cached_response
+        final_data["meta"]["cache_hit"] = True
+        
+        # We still log the cache hit
+        latency_ms = int((time.time() - start_time) * 1000)
+        try:
+            RAGQueryLog.objects.create(
+                user=user if user and user.is_authenticated else None,
+                query_text=query,
+                generated_sql="-- CACHE HIT",
+                sql_results_count=final_data["meta"].get("sql_results", 0),
+                vector_results_count=final_data["meta"].get("vector_results", 0),
+                merged_results_count=final_data["meta"].get("merged_results", 0),
+                final_answer=final_data["answer"].get("summary", ""),
+                latency_ms=latency_ms,
+                error="",
+            )
+        except Exception as e:
+            logger.error(f"[RAG] Logging failed: {e}")
+            
+        return final_data
+
+    # 2. Run LangGraph Agent
+    agent = get_rag_agent()
+    
+    # Setup initial state
+    initial_state = {
+        "query": query,
+        "messages": history,
+        "retry_count": 0,
+        "metadata": {},
+    }
+    
+    # Pass request object in config so synthesis node can build absolute image URLs
+    config = RunnableConfig(
+        configurable={"request": request}
+    )
 
     try:
-        retrieval = retrieve_hybrid(query)
-        merged = retrieval["merged_items"]
-        generated_sql = retrieval["generated_sql"]
-        vector_count = retrieval["vector_count"]
-        sql_count = retrieval["sql_count"]
-
-        answer = synthesise_answer(query, merged)
-
+        logger.info(f"[HybridEngine] Invoking LangGraph for: {query[:40]}")
+        final_state = agent.invoke(initial_state, config=config)
+        
+        # Extract results from state
+        answer = final_state.get("final_response", {})
+        products_data = final_state.get("products_data", [])
+        intent = final_state.get("intent", "search")
+        sql_count = final_state.get("sql_count", 0)
+        vector_count = final_state.get("vector_count", 0)
+        fused = final_state.get("fused_results", [])
+        generated_sql = final_state.get("generated_sql", "")
+        
     except Exception as e:
-        logger.error(f"[RAG] Pipeline error: {e}")
+        logger.error(f"[HybridEngine] Graph invocation failed: {e}")
         error_msg = str(e)
         answer = {
-            "summary": "Hasal moshkela te2neya. Garrab tany ba3d shwaya.",
+            "summary": "حصلت مشكلة تقنية في السيرفر. جرب تاني بعد شوية.",
             "items": [],
             "suggested_action": "view_listing",
         }
-        generated_sql = ""
-        vector_count = 0
+        products_data = []
+        intent = "error"
         sql_count = 0
-        merged = []
+        vector_count = 0
+        fused = []
+        generated_sql = ""
 
-    latency_ms = int((time.time() - start) * 1000)
+    latency_ms = int((time.time() - start_time) * 1000)
 
+    # 3. Build Final Response
+    final_data = {
+        "answer": answer,
+        "products_data": products_data,
+        "meta": {
+            "latency_ms": latency_ms,
+            "sql_results": sql_count,
+            "vector_results": vector_count,
+            "merged_results": len(fused),
+            "intent": intent,
+            "cache_hit": False,
+        }
+    }
+
+    # 4. Cache Set (only if successful)
+    if not error_msg and intent != "error":
+        _cache.set(query, final_data, user_id=user_id)
+
+    # 5. Log to Database
     try:
         RAGQueryLog.objects.create(
             user=user if user and user.is_authenticated else None,
@@ -244,20 +135,12 @@ def rag_query(query: str, user=None) -> dict:
             generated_sql=generated_sql,
             sql_results_count=sql_count,
             vector_results_count=vector_count,
-            merged_results_count=len(merged),
+            merged_results_count=len(fused),
             final_answer=answer.get("summary", ""),
             latency_ms=latency_ms,
             error=error_msg,
         )
     except Exception as e:
-        logger.error(f"[RAG] Logging failed: {e}")
+        logger.error(f"[HybridEngine] Logging failed: {e}")
 
-    return {
-        "answer": answer,
-        "meta": {
-            "latency_ms": latency_ms,
-            "sql_results": sql_count,
-            "vector_results": vector_count,
-            "merged_results": len(merged),
-        }
-    }
+    return final_data

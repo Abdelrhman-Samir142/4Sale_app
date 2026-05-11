@@ -86,16 +86,17 @@ class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
     });
     try {
       _result = await RagService.query(q);
-      // Fetch full product details for each returned ID
-      final ids = (_result?['answer']?['items'] as List?) ?? [];
-      if (ids.isNotEmpty) {
+      
+      final productsData = (_result?['products_data'] as List?) ?? [];
+      if (productsData.isNotEmpty) {
         setState(() => _loadingProducts = true);
         final fetched = <Product>[];
-        for (final id in ids) {
+        for (final item in productsData) {
           try {
-            final p = await ProductsService.get(id.toString());
-            fetched.add(p);
-          } catch (_) {}
+            fetched.add(Product.fromJson(item));
+          } catch (e) {
+            debugPrint('Failed to parse RAG product: $e');
+          }
         }
         if (mounted) {
           setState(() {

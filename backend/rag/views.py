@@ -25,6 +25,7 @@ except ImportError:
 def rag_query_view(request):
     """
     POST /api/rag/query/
+    Body: { "query": "...", "history": [] }
     """
     if not _rag_available:
         return Response(
@@ -46,8 +47,10 @@ def rag_query_view(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    history = request.data.get('history', [])
+
     try:
-        result = rag_query(query, user=request.user)
+        result = rag_query(query, user=request.user, request=request, history=history)
         return Response(result, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f"[RAG/View] Unexpected error: {e}")

@@ -31,6 +31,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   DateTime? _auctionEnd;
   final List<XFile> _images = [];
   String? _aiCategory;
+  String? _aiDetectedClassAr;
   bool _loading = false;
   String? _error;
   List<Map<String, dynamic>> _categories = [];
@@ -90,7 +91,8 @@ class _SellScreenState extends ConsumerState<SellScreen> {
           final result = await ClassifyService.classifyImage(_images.first.path);
           setState(() {
             _aiCategory = result['category']?.toString();
-            if (_aiCategory != null) {
+            _aiDetectedClassAr = result['detected_class_ar']?.toString();
+            if (_aiCategory != null && _aiCategory != 'other') {
               final match = _categories.where((c) => c['id'].toString() == _aiCategory).firstOrNull;
               if (match != null) _selectedCategoryId = match['id'].toString();
             }
@@ -402,7 +404,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         ],
 
         // AI detection badge
-        if (_aiCategory != null) ...[
+        if (_aiDetectedClassAr != null) ...[
           SizedBox(height: 16.h),
           Container(
             padding: EdgeInsets.all(12.w),
@@ -414,37 +416,17 @@ class _SellScreenState extends ConsumerState<SellScreen> {
             child: Row(children: [
               Icon(Icons.auto_awesome, size: 18.w, color: AppColors.primary600),
               SizedBox(width: 8.w),
-              Text('AI detected: $_aiCategory',
+              Text(
+                  ref.read(languageProvider).locale == 'ar'
+                      ? 'الذكاء الاصطناعي اكتشف: $_aiDetectedClassAr'
+                      : 'AI detected: $_aiDetectedClassAr',
                   style: TextStyle(fontSize: 13.sp, color: AppColors.primary700, fontWeight: FontWeight.w600)),
             ]),
           ).animate().fadeIn(delay: 400.ms),
         ],
 
-        // Tips card
-        SizedBox(height: 20.h),
-        Container(
-          padding: EdgeInsets.all(14.w),
-          decoration: BoxDecoration(
-            color: AppColors.primary600.withAlpha(8),
-            borderRadius: BorderRadius.circular(14.r),
-            border: Border.all(color: AppColors.primary600.withAlpha(30)),
-          ),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(Icons.lightbulb_outline_rounded, size: 20.w, color: AppColors.primary600),
-            SizedBox(width: 10.w),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(ref.read(languageProvider).locale == 'ar' ? 'نصائح للصور' : 'Photo Tips',
-                    style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w700, color: AppColors.primary700)),
-                SizedBox(height: 4.h),
-                Text(ref.read(languageProvider).locale == 'ar'
-                        ? '• الصور الجيدة بتجيب 3x مشاهدات أكتر\n• استخدم إضاءة طبيعية'
-                        : '• Good photos get 3x more views\n• Use natural lighting',
-                    style: TextStyle(fontSize: 12.sp, color: AppColors.slate500, height: 1.5)),
-              ]),
-            ),
-          ]),
-        ).animate().fadeIn(delay: 350.ms),
+        // Tips card removed as requested
+
 
         if (_error != null) ...[
           SizedBox(height: 12.h),

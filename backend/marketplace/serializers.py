@@ -171,22 +171,16 @@ def run_auto_bidding(auction, detected_item):
     Core auto-bidding logic. Called after a new auction is created.
     
     1. Find all active UserAgents targeting this detected_item.
-    2. Filter out the seller's own agents and agents with budget < starting_bid.
-    3. If one agent: place a bid at the starting_bid.
-    4. If multiple agents: simulate a bidding war.
-       - Sort agents by max_budget descending.
-       - Winner pays: min(winner_budget, second_highest_budget + increment).
-    5. Create Bid records, update the Auction, and notify winners.
+    2. Filter out agents with insufficient wallet balance.
+    3. Simulate bidding war and handle wallet deductions/refunds.
     """
     from decimal import Decimal
     
-    BID_INCREMENT = Decimal('50.00')  # Each incremental outbid step
+    BID_INCREMENT = Decimal('50.00')
     
     seller = auction.product.owner
     starting_bid = auction.starting_bid
     
-    # Find matching active agents (exclude seller and the current leader)
-    # They must have budget >= (current_bid + increment) to outbid the leader.
     min_required_budget = auction.current_bid + BID_INCREMENT
     if auction.highest_bidder is None:
         min_required_budget = starting_bid
@@ -197,12 +191,13 @@ def run_auto_bidding(auction, detected_item):
             is_active=True,
             max_budget__gte=min_required_budget
         ).exclude(user=seller)
-         .exclude(user=auction.highest_bidder) # Don't bid against yourself
-         .select_related('user')
+         .exclude(user=auction.highest_bidder)
+         .select_related('user', 'user__profile')
     )
     
-    # Filter out agents already notified about this product (bid or rejection)
-    # This prevents duplicate LLM calls and notifications on every loop cycle
+    # Filter by wallet balance
+    potential_agents = [a for a in potential_agents if a.user.profile.wallet_balance >= min_required_budget]
+    
     already_notified_user_ids = set(
         Notification.objects.filter(
             related_product=auction.product,
@@ -214,7 +209,6 @@ def run_auto_bidding(auction, detected_item):
     if not potential_agents:
         return
     
-    # --- LLM Evaluation Step (PARALLEL) ---
     from ai.agent_graph import smart_agent_evaluator
     from concurrent.futures import ThreadPoolExecutor, as_completed
     
@@ -222,7 +216,6 @@ def run_auto_bidding(auction, detected_item):
     product = auction.product
 
     def _evaluate_single_agent(agent):
-        """Evaluate one agent against the product — runs in thread pool."""
         if agent.requirements_prompt.strip():
             logger.info(f"[AgentGraph] Evaluating agent {agent.user.username} requirements...")
             eval_result = smart_agent_evaluator.invoke({
@@ -231,16 +224,15 @@ def run_auto_bidding(auction, detected_item):
                 "product_condition": product.condition,
                 "product_price": str(product.price),
                 "agent_requirements": agent.requirements_prompt,
+                "agent_max_budget": str(agent.max_budget),
             })
             
             reason = eval_result.get("reason", "") if isinstance(eval_result, dict) else getattr(eval_result, 'reason', '')
             is_match = eval_result.get("is_match", False) if isinstance(eval_result, dict) else getattr(eval_result, 'is_match', False)
             return agent, is_match, reason
         else:
-            # No specific requirements, automatically match
             return agent, True, "طابق الفئة المطلوبة (تلقائي)"
 
-    # Run evaluations in parallel (max 5 concurrent LLM calls)
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(_evaluate_single_agent, agent): agent for agent in potential_agents}
         for future in as_completed(futures):
@@ -257,9 +249,7 @@ def run_auto_bidding(auction, detected_item):
                 failed_agent = futures[future]
                 logger.error(f"[AgentGraph] Evaluation failed for {failed_agent.user.username}: {e}")
             
-    # Sort agents by budget for the bidding war logic
     matching_agents.sort(key=lambda a: a.max_budget, reverse=True)
-    # ---------------------------
 
     if not matching_agents:
         logger.info(f"[Agent] No matching agents for '{detected_item}'")
@@ -268,11 +258,19 @@ def run_auto_bidding(auction, detected_item):
     logger.info(f"[Agent] 🤖 Found {len(matching_agents)} true matching agent(s) for '{detected_item}'")
     
     if len(matching_agents) == 1:
-        # Single agent — place bid at starting price
         agent = matching_agents[0]
         bid_amount = starting_bid
         
-        bid = Bid.objects.create(
+        profile = agent.user.profile
+        if profile.wallet_balance < bid_amount:
+            logger.info(f"[Agent] {agent.user.username} has insufficient funds")
+            return
+            
+        # Deduct
+        profile.wallet_balance -= bid_amount
+        profile.save(update_fields=['wallet_balance'])
+        
+        Bid.objects.create(
             auction=auction,
             bidder=agent.user,
             amount=bid_amount
@@ -285,44 +283,78 @@ def run_auto_bidding(auction, detected_item):
         logger.info(f"[Agent] ✅ Single agent {agent.user.username} bid {bid_amount}")
     
     else:
-        # Multiple agents — simulate bidding war
-        # Agents are sorted by max_budget DESC
         winner = matching_agents[0]
         runner_up = matching_agents[1]
         
-        # Winner pays just enough to beat the runner-up
-        winning_bid = min(
-            winner.max_budget,
-            runner_up.max_budget + BID_INCREMENT
-        )
-        
-        # Create bid records for the runner-up first, then the winner
-        # This shows the bidding war history
         runner_up_bid_amount = runner_up.max_budget
-        Bid.objects.create(
-            auction=auction,
-            bidder=runner_up.user,
-            amount=runner_up_bid_amount
-        )
-        _notify_agent_bid(runner_up, auction, runner_up_bid_amount, detected_item, outbid=True)
         
-        bid = Bid.objects.create(
-            auction=auction,
-            bidder=winner.user,
-            amount=winning_bid
-        )
-        
-        # Update auction state
-        auction.current_bid = winning_bid
-        auction.highest_bidder = winner.user
-        auction.save(update_fields=['current_bid', 'highest_bidder'])
-        
-        _notify_agent_bid(winner, auction, winning_bid, detected_item)
-        
-        logger.info(
-            f"[Agent] ✅ Bidding war: {winner.user.username} wins at {winning_bid} "
-            f"(beat {runner_up.user.username} at {runner_up_bid_amount})"
-        )
+        if runner_up.user.profile.wallet_balance >= runner_up_bid_amount:
+            # Deduct from runner up
+            runner_up_profile = runner_up.user.profile
+            runner_up_profile.wallet_balance -= runner_up_bid_amount
+            runner_up_profile.save(update_fields=['wallet_balance'])
+            
+            Bid.objects.create(
+                auction=auction,
+                bidder=runner_up.user,
+                amount=runner_up_bid_amount
+            )
+            _notify_agent_bid(runner_up, auction, runner_up_bid_amount, detected_item, outbid=True)
+            
+            winning_bid = min(
+                winner.max_budget,
+                runner_up_bid_amount + BID_INCREMENT
+            )
+            
+            if winner.user.profile.wallet_balance >= winning_bid:
+                # Deduct from winner
+                winner_profile = winner.user.profile
+                winner_profile.wallet_balance -= winning_bid
+                winner_profile.save(update_fields=['wallet_balance'])
+                
+                # Refund runner up
+                runner_up_profile.wallet_balance += runner_up_bid_amount
+                runner_up_profile.save(update_fields=['wallet_balance'])
+                
+                Bid.objects.create(
+                    auction=auction,
+                    bidder=winner.user,
+                    amount=winning_bid
+                )
+                
+                auction.current_bid = winning_bid
+                auction.highest_bidder = winner.user
+                auction.save(update_fields=['current_bid', 'highest_bidder'])
+                
+                _notify_agent_bid(winner, auction, winning_bid, detected_item)
+                
+                logger.info(
+                    f"[Agent] ✅ Bidding war: {winner.user.username} wins at {winning_bid} "
+                    f"(beat {runner_up.user.username} at {runner_up_bid_amount})"
+                )
+            else:
+                # Winner can't pay, runner up wins
+                auction.current_bid = runner_up_bid_amount
+                auction.highest_bidder = runner_up.user
+                auction.save(update_fields=['current_bid', 'highest_bidder'])
+                logger.info(f"[Agent] Winner had insufficient funds. Runner up wins.")
+        else:
+            # Fallback if runner up can't pay
+            bid_amount = starting_bid
+            if winner.user.profile.wallet_balance >= bid_amount:
+                winner_profile = winner.user.profile
+                winner_profile.wallet_balance -= bid_amount
+                winner_profile.save(update_fields=['wallet_balance'])
+                
+                Bid.objects.create(
+                    auction=auction,
+                    bidder=winner.user,
+                    amount=bid_amount
+                )
+                auction.current_bid = bid_amount
+                auction.highest_bidder = winner.user
+                auction.save(update_fields=['current_bid', 'highest_bidder'])
+                _notify_agent_bid(winner, auction, bid_amount, detected_item)
 
 
 def _notify_agent_bid(agent, auction, amount, detected_item, outbid=False):
@@ -422,6 +454,10 @@ def agent_counter_bid(auction, manual_bidder, round_number=1):
     
     round_number: Guards against infinite loops. Max 3 rounds per auction event.
     """
+    from decimal import Decimal
+    
+    BID_INCREMENT = Decimal('50.00')
+    
     if round_number > MAX_COUNTER_BID_ROUNDS:
         logger.info(f"[Agent] ⛔ Max counter-bid rounds ({MAX_COUNTER_BID_ROUNDS}) reached. Stopping.")
         return
@@ -429,18 +465,16 @@ def agent_counter_bid(auction, manual_bidder, round_number=1):
     detected_item = product.detected_item
 
     if not detected_item:
-        return  # Product was never classified by YOLO
+        return
 
-    # Find active agents for this item, excluding the manual bidder and the seller
     potential_agents = list(
         UserAgent.objects
         .filter(target_item=detected_item, is_active=True)
         .exclude(user=manual_bidder)
         .exclude(user=product.owner)
-        .select_related('user')
+        .select_related('user', 'user__profile')
     )
 
-    # --- LLM Evaluation Step ---
     from ai.agent_graph import smart_agent_evaluator
     matching_agents = []
     
@@ -452,12 +486,12 @@ def agent_counter_bid(auction, manual_bidder, round_number=1):
                 "product_condition": product.condition,
                 "product_price": str(product.price),
                 "agent_requirements": agent.requirements_prompt,
+                "agent_max_budget": str(agent.max_budget),
             })
             if eval_result.get("is_match"):
                 matching_agents.append(agent)
         else:
             matching_agents.append(agent)
-    # ---------------------------
 
     for agent in matching_agents:
         counter_amount = auction.current_bid + BID_INCREMENT
@@ -470,12 +504,35 @@ def agent_counter_bid(auction, manual_bidder, round_number=1):
             _notify_agent_bid(agent, auction, auction.current_bid, detected_item, outbid=True)
             continue
 
+        # Check previous bid to deduct only the difference
+        previous_bid = Bid.objects.filter(auction=auction, bidder=agent.user).order_by('-amount').first()
+        previous_amount = previous_bid.amount if previous_bid else Decimal('0.00')
+        difference = counter_amount - previous_amount
+
+        if agent.user.profile.wallet_balance < difference:
+            logger.info(f"[Agent] {agent.user.username} has insufficient funds for difference")
+            continue
+
+        # Deduct difference
+        agent.user.profile.wallet_balance -= difference
+        agent.user.profile.save(update_fields=['wallet_balance'])
+
         # Place the counter-bid
         Bid.objects.create(
             auction=auction,
             bidder=agent.user,
             amount=counter_amount
         )
+        
+        # Refund the outbid user (previous highest bidder)
+        previous_highest_bidder = auction.highest_bidder
+        if previous_highest_bidder and previous_highest_bidder != agent.user:
+            highest_bid = Bid.objects.filter(auction=auction, bidder=previous_highest_bidder).order_by('-amount').first()
+            if highest_bid:
+                previous_highest_bidder.profile.wallet_balance += highest_bid.amount
+                previous_highest_bidder.profile.save(update_fields=['wallet_balance'])
+                logger.info(f"[Agent] Refunded {previous_highest_bidder.username} amount {highest_bid.amount}")
+
         auction.current_bid = counter_amount
         auction.highest_bidder = agent.user
         auction.save(update_fields=['current_bid', 'highest_bidder'])
@@ -503,10 +560,11 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'title', 'description', 'price', 'category', 'condition', 
-            'location', 'phone_number', 'is_auction',
-            'auction_end_time', 'images', 'uploaded_images'
+            'status', 'location', 'phone_number', 'is_auction',
+            'auction_end_time', 'images', 'uploaded_images',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'status', 'created_at', 'updated_at']
     
     def create(self, validated_data):
         try:

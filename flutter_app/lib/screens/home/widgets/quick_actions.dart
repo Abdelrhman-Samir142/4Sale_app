@@ -61,20 +61,11 @@ class QuickActions extends StatelessWidget {
         route: '/wishlist',
       ),
       _QuickAction(
-        icon: Icons.search_rounded,
-        label: homeDict['smartSearch'] as String? ??
-            (isAr ? 'بحث ذكي' : 'Smart Search'),
-        color: AppColors.latestBlue,
-        bgColor: const Color(0xFFEFF6FF),
-        route: '/search',
-      ),
-      _QuickAction(
-        icon: Icons.add_circle_rounded,
-        label: homeDict['addListing'] as String? ??
-            (isAr ? 'أضف إعلان' : 'Add Listing'),
+        icon: Icons.image_search_rounded,
+        label: isAr ? 'بحث بالصورة' : 'Image Search',
         color: AppColors.successGreen,
         bgColor: const Color(0xFFF0FDF4),
-        route: '/sell',
+        route: '/visual-search',
       ),
     ];
   }

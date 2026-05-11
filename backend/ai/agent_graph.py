@@ -12,7 +12,11 @@ logger = logging.getLogger(__name__)
 class EvaluationResult(BaseModel):
     is_match: bool = Field(description="True if the product matches the agent's requirements, False otherwise.")
     confidence: str = Field(description="Confidence level: high, medium, or low")
-    reason: str = Field(description="One sentence explaining why it matches or doesn't")
+    reason: str = Field(description="Detailed explanation in Egyptian Arabic for why it matched or not")
+    decision_type: str = Field(
+        description="Category of decision: matched, price_too_high, wrong_brand, wrong_type, wrong_condition, missing_info, wrong_location, partial_match",
+        default="matched"
+    )
 
 # Define Graph State
 class AgentState(TypedDict):
@@ -21,9 +25,11 @@ class AgentState(TypedDict):
     product_condition: str
     product_price: str
     agent_requirements: str
+    agent_max_budget: str
     is_match: bool
     confidence: str
     reason: str
+    decision_type: str
 
 def evaluate_node(state: AgentState):
     # Groq model initialization (using llama-3.3-70b-versatile - fast and free)
@@ -36,34 +42,87 @@ def evaluate_node(state: AgentState):
     )
     
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a strict product-matching AI agent for an Egyptian auction/marketplace app (buy & sell used items).
+        ("system", """أنت وكيل ذكي لمنصة "4Sale" — سوق مصري لبيع وشراء المستعمل والخردة.
 
-Your ONLY job is to determine if a listed product specifically matches a user's buying requirements.
+## مهمتك
+قارن بين **المنتج المعروض** و**طلب المشتري** وقرر: هل المنتج ده يناسب اللي بيدور عليه ولا لأ؟
 
-STRICT MATCHING RULES:
-1. BRAND / NAME / AUTHOR: If the user mentions a specific brand, person, or author, it MUST appear (or be clearly implied) in the product title or description. A generic category is NOT a match.
-2. CONDITION: If the user specifies "used" or "new", it must match exactly. Contradiction = no match.
-3. PRICE: If the user mentions a max budget, the starting price must be <= that budget. If price is unknown, be skeptical.
-4. SPECIFICITY: Match on specific attributes (model, size, color, edition) if mentioned by the user.
-5. DOUBT RULE: If information is missing, vague, or contradictory -> return is_match: false.
+## بيانات مهمة
+- ميزانية المشتري القصوى: {budget} جنيه مصري
+- لو سعر المنتج أعلى من الميزانية = ❌ لا يطابق (حتى لو كل حاجة تانية مطابقة)
 
-OUTPUT FORMAT (strict JSON only, no extra text):
+## قواعد المطابقة (بالترتيب)
+
+### 1. نوع المنتج (أهم حاجة)
+المنتج لازم يكون **نفس النوع** اللي المشتري طالبه.
+- "غسالة" ≠ "ثلاجة" ≠ "بوتاجاز"
+- "لابتوب" ≠ "موبايل" ≠ "تابلت"
+- "سرير" ≠ "كنبة" ≠ "دولاب"
+- لو النوع مختلف → decision_type = "wrong_type"
+
+### 2. الماركة / الموديل
+لو المشتري حدد ماركة معينة (توشيبا، سامسونج، LG، HP، إلخ):
+- الماركة لازم تكون موجودة في العنوان أو الوصف
+- منتج بدون ماركة أو بماركة مختلفة = ❌
+- لو الماركة غلط → decision_type = "wrong_brand"
+
+### 3. السعر والميزانية
+- سعر المنتج لازم يكون ≤ ميزانية المشتري ({budget} جنيه)
+- لو السعر أعلى → decision_type = "price_too_high"
+- لو السعر مش معروف → اعتبره مش مطابق
+
+### 4. الحالة
+- لو المشتري قال "جديد" أو "مستعمل" أو "حالة ممتازة" → لازم يتوافق
+- لو الحالة متناقضة → decision_type = "wrong_condition"
+
+### 5. الموقع
+- لو المشتري حدد مدينة (القاهرة، الإسكندرية، إلخ) → لازم يتوافق
+- لو المكان مختلف → decision_type = "wrong_location"
+
+### 6. مواصفات تانية
+- لو المشتري ذكر حجم، لون، سعة، موديل معين → لازم يتوافق
+- لو مفيش معلومات كافية → decision_type = "missing_info"
+
+### 7. قاعدة الشك
+- لو المعلومات ناقصة أو مش واضحة أو متناقضة → is_match = false
+
+## أمثلة
+
+| طلب المشتري | المنتج | النتيجة | السبب |
+|---|---|---|---|
+| "غسالة توشيبا أقل من 5000" (ميزانية 5000) | غسالة توشيبا 8 كيلو - 4500 جنيه | ✅ مطابق | الماركة توشيبا والسعر 4500 أقل من الميزانية 5000 ✅ |
+| "غسالة توشيبا" (ميزانية 3000) | غسالة توشيبا فوق أوتوماتيك - 6000 جنيه | ❌ مش مطابق | السعر 6000 جنيه أعلى من الميزانية 3000 جنيه |
+| "لابتوب ألعاب" (ميزانية 15000) | لابتوب HP مكتبي - 8000 جنيه | ❌ مش مطابق | اللابتوب مكتبي مش للألعاب |
+| "ثلاجة حالة كويسة" (ميزانية 8000) | ثلاجة توشيبا 14 قدم حالة ممتازة - 5000 جنيه | ✅ مطابق | ثلاجة بحالة ممتازة والسعر 5000 في حدود الميزانية 8000 ✅ |
+| "كنبة في القاهرة" (ميزانية 4000) | كنبة مودرن في الإسكندرية - 3000 جنيه | ❌ مش مطابق | المنتج في الإسكندرية مش القاهرة |
+
+## شكل الرد
+رد بـ JSON فقط:
 {{
-  "is_match": true or false,
-  "confidence": "high" | "medium" | "low",
-  "reason": "one sentence explaining why it matches or doesn't"
+  "is_match": true أو false,
+  "confidence": "high" أو "medium" أو "low",
+  "decision_type": "matched" أو "price_too_high" أو "wrong_brand" أو "wrong_type" أو "wrong_condition" أو "wrong_location" أو "missing_info" أو "partial_match",
+  "reason": "اكتب سبب مفصل بالعربي المصري يوضح للمستخدم ليه المنتج طابق أو ما طابقش. لو مطابق اذكر السعر والميزانية. لو مش مطابق وضح السبب بالظبط."
 }}
-"""),
-        ("user", """Product Listing:
-- Title: {title}
-- Description: {desc}
-- Condition: {condition}
-- Starting Price: {price} EGP
 
-User's Buying Requirements:
+## تنبيه مهم
+- السبب (reason) هيتبعت للمستخدم كإشعار، فلازم يكون واضح ومفهوم لأي حد عادي
+- اكتب بالعربي المصري (مش فصحى)
+- لو المنتج مطابق اذكر: اسم المنتج + السعر + إنه في حدود الميزانية
+- لو مش مطابق اذكر: السبب الرئيسي بالظبط (السعر عالي / الماركة غلط / النوع مختلف / إلخ)
+"""),
+        ("user", """المنتج المعروض:
+- العنوان: {title}
+- الوصف: {desc}
+- الحالة: {condition}
+- السعر: {price} جنيه
+
+ميزانية المشتري القصوى: {budget} جنيه
+
+طلب المشتري:
 {req}
 
-Does this product specifically and strongly match the user's requirements? Reply in JSON only.""")
+هل المنتج ده يناسب طلب المشتري؟ رد بـ JSON فقط.""")
     ])
     
     # Using LangChain structured output for Groq
@@ -76,20 +135,25 @@ Does this product specifically and strongly match the user's requirements? Reply
             "desc": state.get("product_desc", ""),
             "condition": state.get("product_condition", ""),
             "price": str(state.get("product_price", "0")),
+            "budget": str(state.get("agent_max_budget", "0")),
             "req": state.get("agent_requirements", "")
         })
         return {
             "is_match": result.is_match, 
             "confidence": result.confidence,
-            "reason": result.reason
+            "reason": result.reason,
+            "decision_type": result.decision_type
         }
     except Exception as e:
-        logger.error(f"[AgentGraph] Groq Evaluation Failed: {e}", exc_info=True)
+        import traceback
+        traceback.print_exc()
+        logger.error(f"[AgentGraph] Groq Evaluation Failed: {e}")
         # Default to False for safety
         return {
             "is_match": False, 
             "confidence": "low",
-            "reason": f"Fallback due to error: {str(e)}"
+            "reason": f"حصل مشكلة فنية أثناء تقييم المنتج: {str(e)}",
+            "decision_type": "missing_info"
         }
 
 # Build LangGraph

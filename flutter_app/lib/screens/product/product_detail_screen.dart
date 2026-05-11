@@ -105,7 +105,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     });
   }
 
+  bool get _auctionEnded => _timeLeft == 'انتهى' || _timeLeft == 'Ended';
+
   Future<void> _placeBid() async {
+    if (_auctionEnded) return;
     final amount = double.tryParse(_bidC.text);
     if (amount == null) return;
     HapticFeedback.mediumImpact();
@@ -121,6 +124,43 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       }
     } catch (e) {
       if (mounted) _showErrorSnackbar(e.toString());
+    }
+  }
+
+  Future<void> _deleteProduct() async {
+    final isAr = ref.read(languageProvider).locale == 'ar';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(isAr ? 'حذف المنتج' : 'Delete Product',
+            style: const TextStyle(fontWeight: FontWeight.w700)),
+        content: Text(isAr
+            ? 'هل أنت متأكد من حذف هذا المنتج؟ لا يمكن التراجع.'
+            : 'Are you sure you want to delete this product? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(isAr ? 'إلغاء' : 'Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.errorRed),
+            child: Text(isAr ? 'حذف' : 'Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      try {
+        await ProductsService.delete(_product!.id.toString());
+        if (mounted) {
+          _showSuccessSnackbar(isAr ? 'تم حذف المنتج ✅' : 'Product deleted ✅');
+          context.pop();
+        }
+      } catch (e) {
+        if (mounted) _showErrorSnackbar(e.toString());
+      }
     }
   }
 
@@ -253,8 +293,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           ],
         ),
         // ── Bottom Action Bar ──────────────────────
-        bottomNavigationBar: auth.isLoggedIn && !isOwner
-            ? _buildBottomBar(dict, isAr, isAuction)
+        bottomNavigationBar: auth.isLoggedIn
+            ? (isOwner
+                ? _buildOwnerBottomBar(dict, isAr)
+                : _buildBottomBar(dict, isAr, isAuction))
             : null,
       ),
     );
@@ -429,14 +471,21 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             onTap: () => context.pop(),
           ),
           const Spacer(),
-          // Share — uses share_plus native sheet
+          // Share
           _glassButton(
             icon: Icons.share_rounded,
             onTap: _shareProduct,
           ),
-          SizedBox(width: 8.w),
-          // Wishlist
-          if (isLoggedIn && !isOwner)
+          if (isOwner) ...[
+            SizedBox(width: 8.w),
+            _glassButton(
+              icon: Icons.delete_outline_rounded,
+              iconColor: AppColors.errorRed,
+              onTap: _deleteProduct,
+            ),
+          ],
+          if (isLoggedIn && !isOwner) ...[
+            SizedBox(width: 8.w),
             _glassButton(
               icon: _isWishlisted
                   ? Icons.favorite_rounded
@@ -448,6 +497,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 setState(() => _isWishlisted = !_isWishlisted);
               },
             ),
+          ],
         ],
       ).animate().fadeIn(duration: 300.ms).slideY(begin: -0.2, end: 0),
     );
@@ -677,7 +727,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               ],
             ),
             // Bid input
-            if (isLoggedIn && !isOwner) ...[
+            if (isLoggedIn && !isOwner && !_auctionEnded) ...[
               SizedBox(height: 14.h),
               Row(
                 children: [
@@ -1066,6 +1116,98 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOwnerBottomBar(Map<String, dynamic> dict, bool isAr) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 12.h),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(8),
+            blurRadius: 12,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: _deleteProduct,
+                child: Container(
+                  padding: EdgeInsets.symmetric(vertical: 14.h),
+                  decoration: BoxDecoration(
+                    color: AppColors.errorRed.withAlpha(12),
+                    borderRadius: BorderRadius.circular(16.r),
+                    border: Border.all(color: AppColors.errorRed.withAlpha(40)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.delete_outline_rounded,
+                          size: 20.w, color: AppColors.errorRed),
+                      SizedBox(width: 8.w),
+                      Text(
+                        isAr ? 'حذف' : 'Delete',
+                        style: TextStyle(
+                          color: AppColors.errorRed,
+                          fontSize: 15.sp,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(width: 12.w),
+            Expanded(
+              flex: 2,
+              child: GestureDetector(
+                onTap: () {
+                  // Edit functionality placeholder
+                  final isAr2 = ref.read(languageProvider).locale == 'ar';
+                  _showSuccessSnackbar(isAr2 ? 'قريباً...' : 'Coming soon...');
+                },
+                child: Container(
+                  padding: EdgeInsets.symmetric(vertical: 14.h),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(16.r),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary600.withAlpha(40),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.edit_rounded,
+                          size: 20.w, color: Colors.white),
+                      SizedBox(width: 8.w),
+                      Text(
+                        dict['editListing'] as String? ?? (isAr ? 'تعديل الإعلان' : 'Edit Listing'),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15.sp,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -10,6 +10,13 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv(override=True)
 
+import sys
+import io
+if sys.stdout.encoding.lower() not in ('utf-8', 'utf8'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding.lower() not in ('utf-8', 'utf8'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -26,7 +33,7 @@ if not SECRET_KEY:
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,.vercel.app').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,.vercel.app,10.0.2.2,*').split(',')
 
 # Application definition
 INSTALLED_APPS = [
@@ -93,10 +100,12 @@ import dj_database_url
 DATABASE_URL = os.getenv('DATABASE_URL')
 
 if DATABASE_URL:
+    print("Connecting to Neon PostgreSQL...")
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL)
     }
 else:
+    print("DATABASE_URL not found, using SQLite fallback.")
     # SQLite fallback for local development (no PostgreSQL needed)
     DATABASES = {
         'default': {

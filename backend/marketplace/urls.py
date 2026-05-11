@@ -23,6 +23,7 @@ from .views import (
     notifications_unread_count,
     get_categories,
     health_check,
+    visual_search_view,
 )
 from .admin_views import (
     AdminProductViewSet,
@@ -63,6 +64,9 @@ urlpatterns = [
     
     # AI Classification
     path('classify-image/', classify_image_view, name='classify-image'),
+    
+    # Visual Search
+    path('visual-search/', visual_search_view, name='visual-search'),
     
     # AI Agent
     path('agent-targets/', get_agent_targets, name='agent-targets'),

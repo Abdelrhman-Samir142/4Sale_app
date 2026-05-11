@@ -37,7 +37,7 @@ def close_expired_auctions():
 
 
 def send_winner_message(auction):
-    """Send a congratulations message to the auction winner via the chat system"""
+    """Send a congratulations message to the auction winner from the seller via the chat system"""
     try:
         conversation, _ = Conversation.objects.get_or_create(
             product=auction.product,
@@ -47,7 +47,7 @@ def send_winner_message(auction):
         Message.objects.create(
             conversation=conversation,
             sender=auction.product.owner,
-            content=f'🎉 تهانينا! لقد فزت بالمزاد على "{auction.product.title}" بمبلغ {auction.current_bid} جنيه. تواصل مع البائع لإتمام عملية الشراء.'
+            content=f'🎉 ألف مبروك! لقد فزت بالمزاد على "{auction.product.title}". تم خصم مبلغ {auction.current_bid} جنيه من محفظتك. خلينا نتفق على ميعاد ومكان المقابلة لإتمام الاستلام.'
         )
     except Exception as e:
         import logging
@@ -654,3 +654,83 @@ def health_check(request):
 
     http_status = 200 if health['status'] == 'ok' else 503
     return Response(health, status=http_status)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def visual_search_view(request):
+    """
+    Visual Search: Accept an uploaded image, generate its embedding,
+    compare against all product images, and return the most similar products.
+    """
+    image_file = request.FILES.get('image')
+    if not image_file:
+        return Response({'error': 'يرجى إرفاق صورة للبحث'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        from ai.vision_service import get_image_embedding, cosine_similarity
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Read the uploaded image bytes
+        image_bytes = image_file.read()
+        logger.info(f"[VisualSearch] Processing image: {image_file.name} ({len(image_bytes)} bytes)")
+
+        # Get embedding for the uploaded image
+        query_embedding = get_image_embedding(image_bytes)
+
+        # Get all active products with images
+        products = Product.objects.filter(status='active').select_related('owner').prefetch_related('images')
+        
+        results = []
+        for product in products:
+            primary_image = product.images.first()
+            if not primary_image:
+                continue
+
+            # For now, generate text embedding from product title+desc as proxy
+            # (since we don't store image embeddings in DB yet)
+            from ai.vision_service import get_text_embedding
+            try:
+                product_embedding = get_text_embedding(f"{product.title} {product.description} {product.category}")
+                similarity = cosine_similarity(query_embedding, product_embedding)
+                results.append({
+                    'product': product,
+                    'similarity': similarity,
+                })
+            except Exception as e:
+                logger.warning(f"[VisualSearch] Skipping product {product.id}: {e}")
+                continue
+
+        # Sort by similarity descending, take top 10
+        results.sort(key=lambda x: x['similarity'], reverse=True)
+        top_results = results[:10]
+
+        # Serialize results
+        serialized = []
+        for r in top_results:
+            p = r['product']
+            primary_img = p.images.first()
+            serialized.append({
+                'id': p.id,
+                'title': p.title,
+                'price': str(p.price),
+                'category': p.category,
+                'condition': p.condition,
+                'location': p.location,
+                'owner_name': p.owner.username,
+                'primary_image': primary_img.image.url if primary_img else None,
+                'similarity': round(r['similarity'] * 100, 1),
+                'is_auction': p.is_auction,
+                'created_at': p.created_at.isoformat() if p.created_at else None,
+            })
+
+        return Response({
+            'count': len(serialized),
+            'results': serialized,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response({'error': f'حدث خطأ أثناء البحث: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

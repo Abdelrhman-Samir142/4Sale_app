@@ -147,6 +147,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       textDirection: lang.textDirection,
       child: Scaffold(
         backgroundColor: const Color(0xFFFAFBFC),
+        floatingActionButton: Padding(
+          padding: EdgeInsets.only(bottom: 80.h), // ارفعها فوق البار
+          child: FloatingActionButton(
+            onPressed: () {
+              HapticFeedback.mediumImpact();
+              context.push('/search');
+            },
+            backgroundColor: AppColors.primary600,
+            elevation: 6,
+            child: const Icon(Icons.smart_toy_rounded, color: Colors.white),
+          ),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         body: AnnotatedRegion<SystemUiOverlayStyle>(
           value: SystemUiOverlayStyle.dark,
           child: SafeArea(
@@ -191,42 +204,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       auctions: _auctions,
                       loading: _loadingAuctions,
                       lang: lang,
-                    ),
-                  ),
-
-                  // ── Categories Header ────────────────────
-                  SliverToBoxAdapter(
-                    child: HomeSectionHeader(
-                      title: (dict['categories']
-                              as Map<String, dynamic>?)?['title'] as String? ??
-                          'Categories',
-                      actionText:
-                          homeDict['viewAll'] as String? ?? 'View All',
-                      icon: Icons.category_rounded,
-                      accentColor: AppColors.recommendedPurple,
-                      onAction: () {},
-                    ),
-                  ),
-
-                  // ── Categories Row ───────────────────────
-                  SliverToBoxAdapter(
-                    child: CategoriesRow(lang: lang),
-                  ),
-
-                  // ── AI Features Banner ───────────────────
-                  SliverToBoxAdapter(
-                    child: AIFeaturesBanner(
-                      homeDict: homeDict,
-                      lang: lang,
-                    ),
-                  ),
-
-                  // ── Stats Section ────────────────────────
-                  SliverToBoxAdapter(
-                    child: StatsSection(
-                      stats: _stats,
-                      loading: _loadingStats,
-                      dict: dict,
                     ),
                   ),
 

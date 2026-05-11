@@ -23,6 +23,7 @@ import '../../screens/notifications/notifications_screen.dart';
 import '../../screens/settings/settings_screen.dart';
 import '../../screens/admin/admin_dashboard_screen.dart';
 import '../../screens/store/store_screen.dart';
+import '../../screens/visual_search/visual_search_screen.dart';
 import '../../screens/shell_screen.dart';
 
 // Helper for SlideUp Transition
@@ -222,6 +223,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/search',
         name: 'search',
         builder: (context, state) => const SmartSearchScreen(),
+      ),
+      GoRoute(
+        path: '/visual-search',
+        name: 'visualSearch',
+        pageBuilder: (context, state) => _buildSlideUpTransition(
+          const VisualSearchScreen(),
+          state.pageKey,
+        ),
       ),
       GoRoute(
         path: '/notifications',

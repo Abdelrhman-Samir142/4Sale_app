@@ -103,10 +103,12 @@ class _StoreScreenState extends ConsumerState<StoreScreen> with TickerProviderSt
     final categories = [
       {'id': 'all', 'en': 'All', 'ar': 'الكل', 'icon': Icons.grid_view_rounded},
       {'id': 'electronics', 'en': 'Electronics', 'ar': 'إلكترونيات', 'icon': Icons.devices_rounded},
+      {'id': 'appliances', 'en': 'Appliances', 'ar': 'أجهزة منزلية', 'icon': Icons.blender_rounded},
       {'id': 'furniture', 'en': 'Furniture', 'ar': 'أثاث', 'icon': Icons.chair_rounded},
       {'id': 'cars', 'en': 'Cars', 'ar': 'سيارات', 'icon': Icons.directions_car_rounded},
       {'id': 'scrap_metals', 'en': 'Scrap', 'ar': 'خردة', 'icon': Icons.recycling_rounded},
       {'id': 'real_estate', 'en': 'Real Estate', 'ar': 'عقارات', 'icon': Icons.home_work_rounded},
+      {'id': 'books', 'en': 'Books', 'ar': 'كتب', 'icon': Icons.menu_book_rounded},
     ];
 
     return Directionality(

@@ -60,6 +60,8 @@ class _HomeProductCardState extends State<HomeProductCard>
     final isAuction = p['is_auction'] == true;
     final id = p['id'].toString();
     final location = p['location'] as String?;
+    final ownerName = p['owner_name'] as String? ?? '';
+    final createdAt = p['created_at'] as String?;
     final isAr = widget.locale == 'ar';
 
     return GestureDetector(
@@ -168,9 +170,22 @@ class _HomeProductCardState extends State<HomeProductCard>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(title,
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w700, color: AppColors.slate800, height: 1.3)),
+                      SizedBox(height: 4.h),
+                      if (ownerName.isNotEmpty)
+                        Row(children: [
+                          Icon(Icons.person_outline_rounded, size: 11.w, color: AppColors.slate400),
+                          SizedBox(width: 3.w),
+                          Expanded(child: Text(ownerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 10.sp, color: AppColors.slate500, fontWeight: FontWeight.w500))),
+                          if (createdAt != null)
+                            Text(_timeAgo(createdAt, isAr),
+                                style: TextStyle(fontSize: 9.sp, color: AppColors.slate400, fontWeight: FontWeight.w500)),
+                        ]),
                       const Spacer(),
                       // Price
                       Text(
@@ -199,6 +214,20 @@ class _HomeProductCardState extends State<HomeProductCard>
         ),
       ),
     );
+  }
+
+  String _timeAgo(String dateStr, bool isAr) {
+    try {
+      final date = DateTime.parse(dateStr);
+      final diff = DateTime.now().difference(date);
+      if (diff.inDays > 30) return isAr ? 'منذ ${diff.inDays ~/ 30} شهر' : '${diff.inDays ~/ 30}mo';
+      if (diff.inDays > 0) return isAr ? 'منذ ${diff.inDays} يوم' : '${diff.inDays}d';
+      if (diff.inHours > 0) return isAr ? 'منذ ${diff.inHours} ساعة' : '${diff.inHours}h';
+      if (diff.inMinutes > 0) return isAr ? 'منذ ${diff.inMinutes} دقيقة' : '${diff.inMinutes}m';
+      return isAr ? 'الآن' : 'now';
+    } catch (_) {
+      return '';
+    }
   }
 }
 

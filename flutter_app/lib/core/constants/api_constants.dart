@@ -6,7 +6,7 @@ class ApiConstants {
   // Override at build time: flutter run --dart-define=API_BASE_URL=https://your-domain.com/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://4-sale-i4pb4pu1p-abdelrhman-samir142s-projects.vercel.app/api/v1',
+    defaultValue: 'http://192.168.1.6:8000/api/v1',
   );
 
   // ── Auth ──────────────────────────────────────────────────────
@@ -71,4 +71,7 @@ class ApiConstants {
 
   // ── RAG Smart Search ──────────────────────────────────────────
   static const String ragQuery = '/rag/query/';
+
+  // ── Visual Search ─────────────────────────────────────────────
+  static const String visualSearch = '/visual-search/';
 }

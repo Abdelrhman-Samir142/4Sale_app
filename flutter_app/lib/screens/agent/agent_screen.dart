@@ -307,10 +307,35 @@ class _AgentScreenState extends ConsumerState<AgentScreen>
                                   _fetch();
                                 },
                                 onDelete: () async {
-                                  HapticFeedback.heavyImpact();
-                                  await AgentService.delete(
-                                      _agents[i]['id'] as int);
-                                  _fetch();
+                                  final isAr = ref.read(languageProvider).locale == 'ar';
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                      title: Text(isAr ? 'حذف الوكيل' : 'Delete Agent',
+                                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                                      content: Text(isAr
+                                          ? 'هل أنت متأكد من حذف هذا الوكيل؟'
+                                          : 'Are you sure you want to delete this agent?'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx, false),
+                                          child: Text(isAr ? 'إلغاء' : 'Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          style: TextButton.styleFrom(foregroundColor: AppColors.errorRed),
+                                          child: Text(isAr ? 'حذف' : 'Delete'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed == true) {
+                                    HapticFeedback.heavyImpact();
+                                    await AgentService.delete(
+                                        _agents[i]['id'] as int);
+                                    _fetch();
+                                  }
                                 },
                               ).animate()
                                   .fadeIn(
