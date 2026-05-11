@@ -270,10 +270,36 @@ class UserProfileViewSet(viewsets.ModelViewSet):
             return self.queryset.filter(user=self.request.user)
         return self.queryset
     
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    @action(detail=False, methods=['get', 'patch'], permission_classes=[IsAuthenticated])
     def me(self, request):
-        """Get current user's profile"""
+        """Get or update current user's profile"""
         profile = get_object_or_404(UserProfile, user=request.user)
+        
+        if request.method == 'PATCH':
+            user = request.user
+            # Update User model fields (first_name, last_name)
+            if 'first_name' in request.data:
+                user.first_name = request.data['first_name']
+            if 'last_name' in request.data:
+                user.last_name = request.data['last_name']
+            user.save()
+            
+            # Update Profile model fields (avatar, phone, city)
+            profile_fields = {}
+            if 'phone' in request.data:
+                profile_fields['phone'] = request.data['phone']
+            if 'city' in request.data:
+                profile_fields['city'] = request.data['city']
+            if profile_fields:
+                for key, val in profile_fields.items():
+                    setattr(profile, key, val)
+                profile.save()
+            
+            # Handle avatar file upload
+            if 'avatar' in request.FILES:
+                profile.avatar = request.FILES['avatar']
+                profile.save(update_fields=['avatar'])
+        
         serializer = self.get_serializer(profile)
         return Response(serializer.data)
 

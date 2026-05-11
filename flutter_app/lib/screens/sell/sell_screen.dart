@@ -32,6 +32,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   final List<XFile> _images = [];
   String? _aiCategory;
   String? _aiDetectedClassAr;
+  bool _isAnalyzingImage = false;
   bool _loading = false;
   String? _error;
   List<Map<String, dynamic>> _categories = [];
@@ -87,6 +88,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       }
       setState(() => _images.addAll(picked));
       if (_images.isNotEmpty) {
+        setState(() => _isAnalyzingImage = true);
         try {
           final result = await ClassifyService.classifyImage(_images.first.path);
           setState(() {
@@ -105,6 +107,10 @@ class _SellScreenState extends ConsumerState<SellScreen> {
                   ? 'فشل تصنيف الصورة بالذكاء الاصطناعي'
                   : 'AI image classification failed',
             );
+          }
+        } finally {
+          if (mounted) {
+            setState(() => _isAnalyzingImage = false);
           }
         }
       }
@@ -146,13 +152,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         imagePaths: _images.map((x) => x.path).toList(),
       );
       if (mounted) {
-        AppSnackbar.success(
-          context,
-          ref.read(languageProvider).locale == 'ar'
-              ? 'تم نشر الإعلان بنجاح ✅'
-              : 'Listing Published Successfully ✅',
-        );
-        context.go('/');
+        context.go('/success');
       }
     } catch (e) {
       setState(() { _error = e.toString(); });
@@ -524,7 +524,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         boxShadow: [BoxShadow(color: Colors.black.withAlpha(6), blurRadius: 6, offset: const Offset(0, 2))],
       ),
       child: DropdownButtonFormField<String>(
-        initialValue: value,
+        value: value,
         decoration: InputDecoration(
           labelText: label,
           labelStyle: TextStyle(fontSize: 14.sp, color: AppColors.slate500),
@@ -566,7 +566,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
             ),
             child: Icon(Icons.gavel_rounded, color: AppColors.auctionOrange, size: 20.w),
           ),
-          activeThumbColor: AppColors.primary600,
+          activeColor: AppColors.primary600,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.r)),
         ),
       ),
@@ -605,7 +605,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       ],
       SizedBox(height: 20.h),
 
-      // AI notice
+      // Warning banners before publishing
       Container(
         padding: EdgeInsets.all(14.w),
         decoration: BoxDecoration(
@@ -616,10 +616,31 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(Icons.auto_awesome, color: AppColors.primary600, size: 20.w),
           SizedBox(width: 10.w),
-          Expanded(child: Text(dict['aiNotice'] as String,
+          Expanded(child: Text(
+            lang.locale == 'ar'
+                ? 'سيقوم الذكاء الاصطناعي بمراجعة إعلانك فور النشر للتأكد من الصور والسعر.'
+                : 'AI will review your listing immediately upon publishing to verify images and price.',
               style: TextStyle(fontSize: 12.sp, color: AppColors.primary700, height: 1.4))),
         ]),
-      ),
+      ).animate().fadeIn(delay: 200.ms),
+      SizedBox(height: 12.h),
+      Container(
+        padding: EdgeInsets.all(14.w),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(14.r),
+          border: Border.all(color: const Color(0xFFFFEDD5)),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.access_time_filled_rounded, color: AppColors.auctionOrange, size: 20.w),
+          SizedBox(width: 10.w),
+          Expanded(child: Text(
+            lang.locale == 'ar'
+                ? 'منتجك هيتراجع من فريق الإدارة قبل ما يظهر للمشترين. هتوصلك إشعار لما يتم قبول إعلانك.'
+                : 'Your product will be reviewed by the administration team before it appears to buyers. You will receive a notification when your ad is approved.',
+              style: TextStyle(fontSize: 12.sp, color: AppColors.auctionOrange, height: 1.4))),
+        ]),
+      ).animate().fadeIn(delay: 300.ms),
       SizedBox(height: 20.h),
 
       // Summary
@@ -705,7 +726,7 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         boxShadow: [BoxShadow(color: Colors.black.withAlpha(6), blurRadius: 6, offset: const Offset(0, 2))],
       ),
       child: DropdownButtonFormField<String>(
-        initialValue: _categories.any((c) => c['id'].toString() == _selectedCategoryId) ? _selectedCategoryId : null,
+        value: _categories.any((c) => c['id'].toString() == _selectedCategoryId) ? _selectedCategoryId : null,
         decoration: InputDecoration(
           labelText: lang.locale == 'ar' ? 'اختر التصنيف *' : 'Select Category *',
           labelStyle: TextStyle(fontSize: 14.sp, color: AppColors.slate500),

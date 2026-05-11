@@ -129,32 +129,36 @@ class AuthNotifier extends Notifier<AuthState> {
     state = const AuthState();
   }
 
-  /// ── MOCK UPDATE ──────────────────────────────────────────────────────────
-  /// Temporarily updates the local user object without sending an API request.
-  void updateUserMock({
+  /// ── PERSISTENT UPDATE ──────────────────────────────────────────────────
+  /// Sends PATCH to /profiles/me/ then refreshes from server.
+  Future<void> updateProfile({
     String? firstName,
     String? lastName,
-    String? walletBalance,
-    String? mockAvatarPath,
-  }) {
+    String? avatarPath,
+  }) async {
     if (state.user == null) return;
-    
+    try {
+      await AuthService.updateProfile(
+        firstName: firstName,
+        lastName: lastName,
+        avatarPath: avatarPath,
+      );
+      // Refresh from server to get the canonical, persisted data
+      await refreshUser();
+    } catch (e) {
+      // Rethrow so the UI can show the error
+      rethrow;
+    }
+  }
+
+  /// ── LOCAL-ONLY UPDATE ──────────────────────────────────────────────────
+  /// For fields without a backend API (e.g., wallet simulation).
+  void updateUserMock({String? walletBalance}) {
+    if (state.user == null) return;
     final updatedUser = Map<String, dynamic>.from(state.user!);
-    
     if (walletBalance != null) {
       updatedUser['wallet_balance'] = walletBalance;
     }
-    if (mockAvatarPath != null) {
-      updatedUser['mock_avatar'] = mockAvatarPath;
-    }
-    
-    if (firstName != null || lastName != null) {
-      final userInfo = Map<String, dynamic>.from(updatedUser['user'] as Map<String, dynamic>? ?? {});
-      if (firstName != null) userInfo['first_name'] = firstName;
-      if (lastName != null) userInfo['last_name'] = lastName;
-      updatedUser['user'] = userInfo;
-    }
-
     state = state.copyWith(user: updatedUser);
   }
 }

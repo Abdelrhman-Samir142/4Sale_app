@@ -569,6 +569,10 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         try:
             uploaded_images = validated_data.pop('uploaded_images', [])
+            
+            # ── Server-side override: Force new products to pending
+            validated_data['status'] = 'pending'
+            
             product = Product.objects.create(**validated_data)
             
             auction = None

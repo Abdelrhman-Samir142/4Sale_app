@@ -36,6 +36,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   Timer? _auctionTimer;
   String _timeLeft = '';
   bool _isUrgent = false;
+  double _progress = 1.0;
   int _currentImageIndex = 0;
   final _pageCtrl = PageController();
 
@@ -100,6 +101,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               ? '$d $dayStr ${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}'
               : '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
           _isUrgent = diff.inHours < 1;
+          _progress = (diff.inSeconds / (3 * 24 * 3600)).clamp(0.0, 1.0);
         });
       }
     });
@@ -262,7 +264,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 ),
                 // Product Info
                 SliverToBoxAdapter(
-                  child: _buildProductInfo(p, dict, currency, isAr),
+                  child: _buildProductInfo(p, dict, currency, isAr, isOwner),
                 ),
                 // Auction Section
                 if (isAuction && auction != null)
@@ -533,7 +535,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   // PRODUCT INFO
   // ═══════════════════════════════════════════════════════════════
   Widget _buildProductInfo(Product p,
-      Map<String, dynamic> dict, String currency, bool isAr) {
+      Map<String, dynamic> dict, String currency, bool isAr, bool isOwner) {
     final title = p.title;
     final price = p.price;
     final isAuction = p.isAuction;
@@ -543,6 +545,44 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Pending Review & Owner Badges
+          if (isOwner && p.status == 'pending') ...[
+            Row(
+              children: [
+                // Review Badge
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED), // light orange
+                    borderRadius: BorderRadius.circular(8.r),
+                    border: Border.all(color: const Color(0xFFFFEDD5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.access_time_rounded, size: 14.w, color: AppColors.auctionOrange),
+                      SizedBox(width: 4.w),
+                      Text(isAr ? 'قيد المراجعة' : 'Pending Review',
+                          style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w700, color: AppColors.auctionOrange)),
+                    ],
+                  ),
+                ),
+                SizedBox(width: 8.w),
+                // Owner Badge
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF), // light blue
+                    borderRadius: BorderRadius.circular(8.r),
+                    border: Border.all(color: const Color(0xFFDBEAFE)),
+                  ),
+                  child: Text(isAr ? 'منتجك' : 'Your Listing',
+                      style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w700, color: const Color(0xFF2563EB))),
+                ),
+              ],
+            ).animate().fadeIn(duration: 400.ms),
+            SizedBox(height: 12.h),
+          ],
           // Title
           Text(
             title,
@@ -653,93 +693,113 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           ],
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Current bid & timer row
-            Row(
+            // Current bid Section
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Current bid
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        dict['currentBid'] as String,
-                        style: TextStyle(
-                          fontSize: 11.sp,
-                          color: AppColors.slate500,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(height: 2.h),
-                      Text(
-                        '${auction['current_bid']} $currency',
-                        style: TextStyle(
-                          fontSize: 22.sp,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.auctionOrange,
-                        ),
-                      ),
-                    ],
+                Text(
+                  dict['currentBid'] as String,
+                  style: TextStyle(
+                    fontSize: 12.sp,
+                    color: AppColors.slate500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                // Timer
-                Container(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: 12.w, vertical: 8.h),
-                  decoration: BoxDecoration(
-                    color: _isUrgent
-                        ? AppColors.errorRed.withAlpha(12)
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(
-                      color: _isUrgent
-                          ? AppColors.errorRed.withAlpha(40)
-                          : const Color(0xFFE8ECF0),
-                    ),
+                SizedBox(height: 4.h),
+                Text(
+                  '${auction['current_bid']} $currency',
+                  style: TextStyle(
+                    fontSize: 28.sp,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.auctionOrange,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.timer_rounded,
-                        size: 16.w,
-                        color: _isUrgent
-                            ? AppColors.errorRed
-                            : AppColors.slate500,
-                      ),
-                      SizedBox(width: 6.w),
-                      Text(
-                        _timeLeft.isEmpty ? '...' : _timeLeft,
-                        style: TextStyle(
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w800,
-                          color: _isUrgent
-                              ? AppColors.errorRed
-                              : AppColors.slate700,
-                          fontFeatures: const [
-                            FontFeature.tabularFigures()
-                          ],
-                        ),
-                      ),
-                    ],
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  '${bids.length} ${isAr ? "مزايدات" : "bids"}',
+                  style: TextStyle(
+                    fontSize: 13.sp,
+                    color: AppColors.slate500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
+            SizedBox(height: 20.h),
+
+            // Countdown Timer Section
+            Container(
+              padding: EdgeInsets.all(16.w),
+              decoration: BoxDecoration(
+                color: _isUrgent
+                    ? AppColors.errorRed.withAlpha(15)
+                    : AppColors.auctionOrange.withAlpha(15),
+                borderRadius: BorderRadius.circular(16.r),
+                border: Border.all(
+                  color: _isUrgent
+                      ? AppColors.errorRed.withAlpha(30)
+                      : AppColors.auctionOrange.withAlpha(30),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 18.w,
+                        color: _isUrgent ? AppColors.errorRed : AppColors.auctionOrange,
+                      ),
+                      SizedBox(width: 8.w),
+                      Text(
+                        isAr ? 'المتبقي على انتهاء المزاد' : 'Time remaining',
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.slate700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 12.h),
+                  Text(
+                    _timeLeft.isEmpty ? '...' : _timeLeft,
+                    style: TextStyle(
+                      fontSize: 32.sp,
+                      fontWeight: FontWeight.w900,
+                      color: _isUrgent ? AppColors.errorRed : AppColors.auctionOrange,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  SizedBox(height: 16.h),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4.r),
+                    child: LinearProgressIndicator(
+                      value: _progress,
+                      minHeight: 8.h,
+                      backgroundColor: (_isUrgent ? AppColors.errorRed : AppColors.auctionOrange).withAlpha(30),
+                      color: _isUrgent ? AppColors.errorRed : AppColors.auctionOrange,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             // Bid input
             if (isLoggedIn && !isOwner && !_auctionEnded) ...[
-              SizedBox(height: 14.h),
+              SizedBox(height: 20.h),
               Row(
                 children: [
                   Expanded(
                     child: Container(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 14.w),
+                      padding: EdgeInsets.symmetric(horizontal: 14.w),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12.r),
-                        border:
-                            Border.all(color: const Color(0xFFE8ECF0)),
+                        border: Border.all(color: const Color(0xFFE8ECF0)),
                       ),
                       child: TextField(
                         controller: _bidC,
@@ -756,8 +816,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                             color: AppColors.slate400,
                           ),
                           border: InputBorder.none,
-                          contentPadding:
-                              EdgeInsets.symmetric(vertical: 12.h),
+                          contentPadding: EdgeInsets.symmetric(vertical: 12.h),
                           suffixText: currency,
                           suffixStyle: TextStyle(
                             fontSize: 13.sp,
@@ -772,8 +831,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                   GestureDetector(
                     onTap: _placeBid,
                     child: Container(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: 20.w, vertical: 13.h),
+                      padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 13.h),
                       decoration: BoxDecoration(
                         gradient: AppColors.auctionGradient,
                         borderRadius: BorderRadius.circular(12.r),
@@ -1143,20 +1201,19 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 child: Container(
                   padding: EdgeInsets.symmetric(vertical: 14.h),
                   decoration: BoxDecoration(
-                    color: AppColors.errorRed.withAlpha(12),
+                    color: Colors.red,
                     borderRadius: BorderRadius.circular(16.r),
-                    border: Border.all(color: AppColors.errorRed.withAlpha(40)),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.delete_outline_rounded,
-                          size: 20.w, color: AppColors.errorRed),
+                          size: 20.w, color: Colors.white),
                       SizedBox(width: 8.w),
                       Text(
-                        isAr ? 'حذف' : 'Delete',
+                        isAr ? 'حذف المنتج' : 'Delete Product',
                         style: TextStyle(
-                          color: AppColors.errorRed,
+                          color: Colors.white,
                           fontSize: 15.sp,
                           fontWeight: FontWeight.w700,
                         ),
@@ -1168,25 +1225,16 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             ),
             SizedBox(width: 12.w),
             Expanded(
-              flex: 2,
               child: GestureDetector(
                 onTap: () {
-                  // Edit functionality placeholder
                   final isAr2 = ref.read(languageProvider).locale == 'ar';
                   _showSuccessSnackbar(isAr2 ? 'قريباً...' : 'Coming soon...');
                 },
                 child: Container(
                   padding: EdgeInsets.symmetric(vertical: 14.h),
                   decoration: BoxDecoration(
-                    gradient: AppColors.primaryGradient,
+                    color: Colors.green,
                     borderRadius: BorderRadius.circular(16.r),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary600.withAlpha(40),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1195,7 +1243,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                           size: 20.w, color: Colors.white),
                       SizedBox(width: 8.w),
                       Text(
-                        dict['editListing'] as String? ?? (isAr ? 'تعديل الإعلان' : 'Edit Listing'),
+                        isAr ? 'تعديل الإعلان' : 'Edit Ad',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 15.sp,

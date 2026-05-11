@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,89 +18,88 @@ class HomeAppBar extends ConsumerWidget {
     final lang = ref.watch(languageProvider);
     final auth = ref.watch(authProvider);
 
+    final String firstName = auth.user?['user']?['first_name'] ?? '';
+    final String lastName = auth.user?['user']?['last_name'] ?? '';
+    final String fullName = '$firstName $lastName'.trim().isNotEmpty 
+        ? '$firstName $lastName'.trim() 
+        : (auth.username ?? 'Omar Hussein');
+        
+    final String? avatarUrl = auth.user?['profile_picture'] ?? auth.user?['user']?['profile_picture'] ?? auth.user?['avatar'];
+
     return SliverToBoxAdapter(
       child: Container(
-        padding: EdgeInsets.fromLTRB(20.w, 12.h, 12.w, 8.h),
-        child: Row(
+        padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 16.h),
+        color: Colors.white,
+        child: Column(
           children: [
-            // Logo
-            const AppLogo(scale: 0.8, withAnimation: false),
-            SizedBox(width: 12.w),
-            // Greeting + Username
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        lang.locale == 'ar' ? 'أهلاً' : 'Welcome',
-                        style: TextStyle(
-                          fontSize: 13.sp,
-                          color: AppColors.slate400,
-                          fontWeight: FontWeight.w500,
-                        ),
+            // TOP TIER: Logo and Profile
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Far Left: App Logo
+                const AppLogo(scale: 0.85, withAnimation: false),
+
+                // Far Right: User Area & Notification
+                Row(
+                  children: [
+                    // Notification Bell (Emerald Green)
+                    const _NotificationBtn(),
+                    SizedBox(width: 12.w),
+                    
+                    // Profile Section
+                    GestureDetector(
+                      onTap: () => context.push('/profile'),
+                      child: Row(
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                lang.locale == 'ar' ? 'أهلاً،' : 'Welcome,',
+                                style: TextStyle(
+                                  fontSize: 11.sp,
+                                  color: AppColors.slate400,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  Text(
+                                    fullName,
+                                    style: TextStyle(
+                                      fontSize: 14.sp,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.slate900,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                  SizedBox(width: 4.w),
+                                  Icon(Icons.keyboard_arrow_down_rounded, size: 16.w, color: AppColors.slate500),
+                                ],
+                              ),
+                            ],
+                          ),
+                          SizedBox(width: 10.w),
+                          CircleAvatar(
+                            radius: 22.r,
+                            backgroundColor: AppColors.primary100,
+                            backgroundImage: avatarUrl != null
+                                ? NetworkImage('$avatarUrl?v=${DateTime.now().millisecondsSinceEpoch}') as ImageProvider
+                                : null,
+                            child: avatarUrl == null
+                                ? Icon(Icons.person_rounded, color: AppColors.primary600, size: 24.w)
+                                : null,
+                          ),
+                        ],
                       ),
-                      SizedBox(width: 4.w),
-                      Text('👋', style: TextStyle(fontSize: 13.sp)),
-                    ],
-                  ),
-                  Text(
-                    auth.username ?? '4Sale',
-                    style: TextStyle(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.slate900,
-                      letterSpacing: -0.3,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ),
-            // Search button
-            _IconBtn(
-              icon: Icons.search_rounded,
-              onTap: () => context.push('/search'),
-            ),
-            // Notifications button with badge
-            const _NotificationBtn(),
           ],
         ),
       ).animate().fadeIn(duration: 300.ms).slideY(begin: -0.1, end: 0),
-    );
-  }
-}
-
-// ── Icon button ──────────────────────────────────────────────────────────
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _IconBtn({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: EdgeInsets.symmetric(horizontal: 4.w),
-        padding: EdgeInsets.all(10.w),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(14.r),
-          border: Border.all(color: const Color(0xFFEEF0F2)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(6),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Icon(icon, size: 20.w, color: AppColors.slate600),
-      ),
     );
   }
 }
@@ -116,25 +116,16 @@ class _NotificationBtn extends ConsumerWidget {
     return GestureDetector(
       onTap: () => context.push('/notifications'),
       child: Container(
-        margin: EdgeInsets.symmetric(horizontal: 4.w),
         padding: EdgeInsets.all(10.w),
         decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
+          color: AppColors.primary50,
           borderRadius: BorderRadius.circular(14.r),
-          border: Border.all(color: const Color(0xFFEEF0F2)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(6),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
         ),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            Icon(Icons.notifications_none_rounded,
-                size: 20.w, color: AppColors.slate600),
+            Icon(Icons.notifications_active_rounded,
+                size: 22.w, color: AppColors.primary600),
             if (unreadCount > 0)
               Positioned(
                 top: -4,
@@ -156,7 +147,7 @@ class _NotificationBtn extends ConsumerWidget {
                     child: Text(
                       unreadCount > 99 ? '99+' : '$unreadCount',
                       style: TextStyle(
-                        color: Theme.of(context).cardColor,
+                        color: Colors.white,
                         fontSize: 9.sp,
                         fontWeight: FontWeight.w800,
                       ),

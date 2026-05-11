@@ -51,7 +51,7 @@ class QuickActions extends StatelessWidget {
             (isAr ? 'وكيل ذكي' : 'AI Agent'),
         color: AppColors.recommendedPurple,
         bgColor: const Color(0xFFFAF5FF),
-        route: '/agent',
+        route: '/smart-agent',
       ),
       _QuickAction(
         icon: Icons.favorite_rounded,
@@ -66,6 +66,13 @@ class QuickActions extends StatelessWidget {
         color: AppColors.successGreen,
         bgColor: const Color(0xFFF0FDF4),
         route: '/visual-search',
+      ),
+      _QuickAction(
+        icon: Icons.auto_awesome_rounded,
+        label: homeDict['smartSearch'] as String? ?? (isAr ? 'البحث الذكي' : 'Smart Search'),
+        color: const Color(0xFF0284C7), // Deep Cyan
+        bgColor: const Color(0xFFF0F9FF), // Light Cyan bg
+        route: '/search',
       ),
     ];
   }

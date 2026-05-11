@@ -67,4 +67,33 @@ class AuthService {
       throw Exception(parseDioError(e));
     }
   }
+
+  /// PATCH /profiles/me/ — Update profile name and/or avatar
+  static Future<Map<String, dynamic>> updateProfile({
+    String? firstName,
+    String? lastName,
+    String? avatarPath,
+  }) async {
+    try {
+      if (avatarPath != null) {
+        // Use multipart for file upload
+        final formData = FormData.fromMap({
+          if (firstName != null) 'first_name': firstName,
+          if (lastName != null) 'last_name': lastName,
+          'avatar': await MultipartFile.fromFile(avatarPath, filename: 'avatar.jpg'),
+        });
+        final response = await _dio.patch(ApiConstants.profileMe, data: formData);
+        return response.data as Map<String, dynamic>;
+      } else {
+        // JSON payload for name-only updates
+        final response = await _dio.patch(ApiConstants.profileMe, data: {
+          if (firstName != null) 'first_name': firstName,
+          if (lastName != null) 'last_name': lastName,
+        });
+        return response.data as Map<String, dynamic>;
+      }
+    } on DioException catch (e) {
+      throw Exception(parseDioError(e));
+    }
+  }
 }

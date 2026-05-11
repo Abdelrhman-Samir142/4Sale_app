@@ -13,6 +13,7 @@ import '../../services/products_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/app_snackbar.dart';
 import '../../shared/widgets/app_shimmer.dart';
+import '../../models/product.dart';
 import '../../core/auth/auth_guard.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -137,7 +138,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   Widget _buildHeaderAndWallet(
       String initial, String fullName, String username, String email,
       Color avatarColor, bool isAr, Map<String, dynamic> user, String walletBalance, String currency) {
-    final mockAvatarPath = user['mock_avatar'] as String?;
+    // Read server avatar from global auth state (same source as HomeScreen)
+    final avatarUrl = user['profile_picture'] as String? ?? user['avatar'] as String? ?? (user['user'] as Map<String, dynamic>?)?['profile_picture'] as String?;
 
     return Stack(
       children: [
@@ -239,8 +241,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF1E293B)),
                               child: CircleAvatar(
                                 backgroundColor: avatarColor.withAlpha(100),
-                                backgroundImage: mockAvatarPath != null ? FileImage(File(mockAvatarPath)) : null,
-                                child: mockAvatarPath == null
+                                backgroundImage: avatarUrl != null 
+                                    ? NetworkImage('$avatarUrl?v=${DateTime.now().millisecondsSinceEpoch}') as ImageProvider
+                                    : null,
+                                child: avatarUrl == null
                                     ? Text(initial, style: TextStyle(fontSize: 32.sp, fontWeight: FontWeight.w900, color: Colors.white))
                                     : null,
                               ),
@@ -711,11 +715,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final firstNameC = TextEditingController(text: userInfo['first_name'] as String? ?? '');
     final lastNameC = TextEditingController(text: userInfo['last_name'] as String? ?? '');
     
-    String? pickedImagePath = user['mock_avatar'] as String?;
+    // Read current server avatar from global state
+    final currentAvatarUrl = user['profile_picture'] as String? 
+        ?? user['avatar'] as String? 
+        ?? userInfo['profile_picture'] as String?;
+    
+    String? pickedImagePath;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         return StatefulBuilder(
@@ -723,13 +733,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             return Container(
               padding: EdgeInsets.only(
                 left: 20.w, right: 20.w, top: 24.h,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24.h,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
               ),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(32.r)),
               ),
-              child: SingleChildScrollView(
+              child: SafeArea(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -737,56 +747,72 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     SizedBox(height: 24.h),
                     Text(isAr ? 'تعديل الملف الشخصي' : 'Edit Profile', style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.w900, color: AppColors.slate900)),
                     SizedBox(height: 24.h),
-                    GestureDetector(
-                      onTap: () async {
-                        final picker = ImagePicker();
-                        final xFile = await picker.pickImage(source: ImageSource.gallery);
-                        if (xFile != null) setStateSheet(() => pickedImagePath = xFile.path);
-                      },
-                      child: Stack(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: AppColors.primary100, width: 4),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () async {
+                                final picker = ImagePicker();
+                                final xFile = await picker.pickImage(source: ImageSource.gallery);
+                                if (xFile != null) setStateSheet(() => pickedImagePath = xFile.path);
+                              },
+                              child: Stack(
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: AppColors.primary100, width: 4),
+                                    ),
+                                    child: CircleAvatar(
+                                      radius: 46.w,
+                                      backgroundColor: AppColors.primary50,
+                                      backgroundImage: pickedImagePath != null 
+                                          ? FileImage(File(pickedImagePath!)) as ImageProvider
+                                          : (currentAvatarUrl != null 
+                                              ? NetworkImage(currentAvatarUrl) as ImageProvider
+                                              : null),
+                                      child: (pickedImagePath == null && currentAvatarUrl == null) 
+                                          ? Icon(Icons.add_a_photo_rounded, size: 30.w, color: AppColors.primary500) 
+                                          : null,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    bottom: 0, right: 0,
+                                    child: Container(
+                                      padding: EdgeInsets.all(8.w),
+                                      decoration: BoxDecoration(color: AppColors.primary600, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+                                      child: Icon(Icons.camera_alt_rounded, size: 14.w, color: Colors.white),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            child: CircleAvatar(
-                              radius: 46.w,
-                              backgroundColor: AppColors.primary50,
-                              backgroundImage: pickedImagePath != null ? FileImage(File(pickedImagePath!)) : null,
-                              child: pickedImagePath == null ? Icon(Icons.add_a_photo_rounded, size: 30.w, color: AppColors.primary500) : null,
+                            SizedBox(height: 32.h),
+                            TextField(
+                              controller: firstNameC,
+                              decoration: InputDecoration(
+                                labelText: isAr ? 'الاسم الأول' : 'First Name',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16.r)),
+                                prefixIcon: const Icon(Icons.person_outline_rounded),
+                              ),
                             ),
-                          ),
-                          Positioned(
-                            bottom: 0, right: 0,
-                            child: Container(
-                              padding: EdgeInsets.all(8.w),
-                              decoration: BoxDecoration(color: AppColors.primary600, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
-                              child: Icon(Icons.camera_alt_rounded, size: 14.w, color: Colors.white),
+                            SizedBox(height: 16.h),
+                            TextField(
+                              controller: lastNameC,
+                              decoration: InputDecoration(
+                                labelText: isAr ? 'الاسم الأخير' : 'Last Name',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16.r)),
+                                prefixIcon: const Icon(Icons.person_outline_rounded),
+                              ),
                             ),
-                          ),
-                        ],
+                            SizedBox(height: 32.h),
+                          ],
+                        ),
                       ),
                     ),
-                    SizedBox(height: 32.h),
-                    TextField(
-                      controller: firstNameC,
-                      decoration: InputDecoration(
-                        labelText: isAr ? 'الاسم الأول' : 'First Name',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16.r)),
-                        prefixIcon: const Icon(Icons.person_outline_rounded),
-                      ),
-                    ),
-                    SizedBox(height: 16.h),
-                    TextField(
-                      controller: lastNameC,
-                      decoration: InputDecoration(
-                        labelText: isAr ? 'الاسم الأخير' : 'Last Name',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16.r)),
-                        prefixIcon: const Icon(Icons.person_outline_rounded),
-                      ),
-                    ),
-                    SizedBox(height: 32.h),
+                    SizedBox(height: 8.h),
                     SizedBox(
                       width: double.infinity, height: 56.h,
                       child: ElevatedButton(
@@ -794,14 +820,36 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           backgroundColor: AppColors.primary600, elevation: 0,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
                         ),
-                        onPressed: () {
-                          ref.read(authProvider.notifier).updateUserMock(firstName: firstNameC.text.trim(), lastName: lastNameC.text.trim(), mockAvatarPath: pickedImagePath);
-                          Navigator.pop(ctx);
-                          AppSnackbar.success(context, isAr ? 'تم تعديل البيانات بنجاح' : 'Data updated successfully');
+                        onPressed: () async {
+                          // Show loading dialog on root navigator to avoid lock conflicts
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            useRootNavigator: true,
+                            builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary600)),
+                          );
+                          try {
+                            await ref.read(authProvider.notifier).updateProfile(
+                              firstName: firstNameC.text.trim(),
+                              lastName: lastNameC.text.trim(),
+                              avatarPath: pickedImagePath,
+                            );
+                            // Dismiss loading dialog (root navigator)
+                            if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+                            // Wait a frame to avoid _debugLocked assertion
+                            await Future.delayed(const Duration(milliseconds: 50));
+                            // Dismiss bottom sheet
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (context.mounted) AppSnackbar.success(context, isAr ? 'تم تعديل البيانات بنجاح' : 'Data updated successfully');
+                          } catch (e) {
+                            if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+                            if (context.mounted) AppSnackbar.error(context, isAr ? 'فشل في حفظ التعديلات' : 'Failed to save changes');
+                          }
                         },
                         child: Text(isAr ? 'حفظ التعديلات' : 'Save Changes', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.white)),
                       ),
                     ),
+                    SizedBox(height: 16.h),
                   ],
                 ),
               ),
@@ -929,14 +977,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  Widget _listingTile(dynamic p, String currency, int index) {
-    final price = p['price']?.toString() ?? '0';
-    final isAuction = p['is_auction'] == true;
+  Widget _listingTile(Product p, String currency, int index) {
+    final price = p.price.toString();
+    final isAuction = p.isAuction;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(20.w, 0, 20.w, 12.h),
       child: GestureDetector(
-        onTap: () => context.push('/product/${p['id']}'),
+        onTap: () => context.push('/product/${p.id}'),
         child: Container(
           padding: EdgeInsets.all(14.w),
           decoration: BoxDecoration(
@@ -963,7 +1011,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      p['title'] ?? '',
+                      p.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w800, color: AppColors.slate900),

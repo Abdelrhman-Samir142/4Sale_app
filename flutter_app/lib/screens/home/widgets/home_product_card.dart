@@ -158,6 +158,21 @@ class _HomeProductCardState extends State<HomeProductCard>
                           ),
                         ),
                       ),
+                    // Pending Badge
+                    if (p['status'] == 'pending' && widget.isOwner)
+                      Positioned(
+                        top: 8.w, right: isAuction ? 75.w : 8.w,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                          decoration: BoxDecoration(color: const Color(0xFFFFF7ED), borderRadius: BorderRadius.circular(20.r)),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.access_time_rounded, size: 11.w, color: AppColors.auctionOrange),
+                            SizedBox(width: 3.w),
+                            Text(isAr ? 'قيد المراجعة' : 'Pending',
+                                style: TextStyle(color: AppColors.auctionOrange, fontSize: 10.sp, fontWeight: FontWeight.w700)),
+                          ]),
+                        ),
+                      ),
                   ],
                 ),
               ),

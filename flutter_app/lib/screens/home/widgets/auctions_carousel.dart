@@ -23,17 +23,18 @@ class AuctionsCarousel extends StatelessWidget {
   Widget build(BuildContext context) {
     if (loading) {
       return SizedBox(
-        height: 185.h,
+        height: 380.h,
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
+          shrinkWrap: true,
           padding: EdgeInsets.symmetric(horizontal: 16.w),
           itemCount: 3,
           itemBuilder: (_, __) => Container(
-            width: 260.w,
+            width: 240.w,
             margin: EdgeInsets.only(right: 12.w),
             child: AppShimmer(
-                width: 260.w,
-                height: 185.h,
+                width: 240.w,
+                height: 380.h,
                 borderRadius: BorderRadius.circular(18.r)),
           ),
         ),
@@ -73,9 +74,10 @@ class AuctionsCarousel extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 185.h,
+      height: 380.h,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
+        shrinkWrap: true,
         padding: EdgeInsets.symmetric(horizontal: 16.w),
         physics: const BouncingScrollPhysics(),
         itemCount: auctions.length,
@@ -123,17 +125,21 @@ class _AuctionCardState extends State<_AuctionCard>
 
   String _timeLeft() {
     final a = widget.auction;
+    if (a is! Map) return '';
     final isAr = widget.lang.locale == 'ar';
-    final endStr =
-        a['auction_end_time'] as String? ?? a['end_time'] as String?;
+    // Backend AuctionSerializer returns 'end_time'
+    final endStr = a['end_time'] as String? ?? a['auction_end_time'] as String?;
     if (endStr == null) return '';
     try {
       final end = DateTime.parse(endStr);
       final rem = end.difference(DateTime.now());
       if (rem.isNegative) return isAr ? 'انتهى' : 'Ended';
-      if (rem.inDays > 0) return '${rem.inDays}${isAr ? ' يوم' : 'd'}';
-      if (rem.inHours > 0) return '${rem.inHours}${isAr ? ' ساعة' : 'h'}';
-      return '${rem.inMinutes}${isAr ? ' دقيقة' : 'm'}';
+      
+      final hours = rem.inHours.toString().padLeft(2, '0');
+      final minutes = (rem.inMinutes % 60).toString().padLeft(2, '0');
+      final seconds = (rem.inSeconds % 60).toString().padLeft(2, '0');
+      
+      return isAr ? 'ينتهي خلال: ${hours}س : ${minutes}د : ${seconds}ث' : 'Ends in: ${hours}h : ${minutes}m : ${seconds}s';
     } catch (_) {
       return '';
     }
@@ -143,210 +149,164 @@ class _AuctionCardState extends State<_AuctionCard>
   Widget build(BuildContext context) {
     final a = widget.auction;
     final isAr = widget.lang.locale == 'ar';
-    final image =
-        a['product']?['primary_image'] as String? ?? a['primary_image'] as String?;
-    final title =
-        a['product']?['title'] as String? ?? a['title'] as String? ?? '';
-    final currentBid =
-        a['current_bid']?.toString() ?? a['price']?.toString() ?? '0';
+    
+    // ── Correct Data Extraction (matches AuctionSerializer flat keys) ──
+    // Backend returns: product_image (absolute URL), product_title (string),
+    // product (integer ID), current_bid, total_bids, end_time
+    final image = (a is Map ? a['product_image'] as String? : null);
+    final title = (a is Map ? a['product_title'] as String? ?? a['title'] as String? : null) ?? '';
+    final currentBidRaw = (a is Map ? a['current_bid']?.toString() : null) ?? '0';
+    final currentBid = double.tryParse(currentBidRaw)?.toStringAsFixed(0) ?? currentBidRaw;
+    final bidsCount = (a is Map ? a['total_bids']?.toString() : null) ?? '0';
     final currency = widget.lang.dict['currency'] as String;
-    final productId =
-        a['product']?['id']?.toString() ?? a['id']?.toString() ?? '';
+    // Route using the product's database ID (integer from backend)
+    final productId = (a is Map ? a['product']?.toString() : null) ?? '';
     final timeLeft = _timeLeft();
 
     return GestureDetector(
       onTapDown: (_) => _ctrl.forward(),
       onTapUp: (_) {
         _ctrl.reverse();
-        context.push('/product/$productId');
+        if (productId.isNotEmpty) context.push('/product/$productId');
       },
       onTapCancel: () => _ctrl.reverse(),
       child: ScaleTransition(
         scale: _scale,
         child: Container(
-          width: 260.w,
-          margin: EdgeInsets.only(right: 12.w, top: 4.h, bottom: 4.h),
+          width: 240.w, // Large Hero Width
+          margin: EdgeInsets.only(right: 16.w, top: 4.h, bottom: 8.h),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(18.r),
+            borderRadius: BorderRadius.circular(24.r),
             boxShadow: [
               BoxShadow(
-                color: AppColors.auctionOrange.withAlpha(12),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+                color: AppColors.slate900.withAlpha(10),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
             ],
-            border: Border.all(color: AppColors.auctionOrange.withAlpha(20)),
+            border: Border.all(color: AppColors.slate200),
           ),
-          clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min, // Safely bounds the layout
             children: [
-              // ── Image ─────────────────────────────────
-              Expanded(
-                flex: 3,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (image != null)
-                      CachedNetworkImage(
-                        imageUrl: image,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            Container(color: const Color(0xFFF3F4F6)),
-                        errorWidget: (_, __, ___) => Container(
+              // ── Top Half: Large Image ─────────────────────────────────
+              ClipRRect(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+                child: SizedBox(
+                  height: 200.h,
+                  width: double.infinity,
+                  child: image != null
+                      ? CachedNetworkImage(
+                          imageUrl: image,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: const Color(0xFFF3F4F6)),
+                          errorWidget: (_, __, ___) => Container(
+                            color: const Color(0xFFFFF7ED),
+                            child: Icon(Icons.gavel_rounded, size: 48.w, color: AppColors.auctionOrange.withAlpha(80)),
+                          ),
+                        )
+                      : Container(
                           color: const Color(0xFFFFF7ED),
-                          child: Icon(Icons.gavel_rounded,
-                              size: 36.w,
-                              color: AppColors.auctionOrange.withAlpha(80)),
+                          child: Icon(Icons.gavel_rounded, size: 48.w, color: AppColors.auctionOrange.withAlpha(80)),
                         ),
-                      )
-                    else
+                ),
+              ),
+              
+              // ── Bottom Half: Hero Info ──────────────────────────────────
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Urgency Tag
+                    if (timeLeft.isNotEmpty)
                       Container(
-                        color: const Color(0xFFFFF7ED),
-                        child: Icon(Icons.gavel_rounded,
-                            size: 36.w,
-                            color: AppColors.auctionOrange.withAlpha(80)),
-                      ),
-                    // LIVE badge
-                    Positioned(
-                      top: 8.w,
-                      left: 8.w,
-                      child: Container(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: 8.w, vertical: 4.h),
+                        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
                         decoration: BoxDecoration(
-                          gradient: AppColors.auctionGradient,
-                          borderRadius: BorderRadius.circular(20.r),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.auctionOrange.withAlpha(40),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                          color: AppColors.auctionOrange.withAlpha(20),
+                          borderRadius: BorderRadius.circular(8.r),
+                          border: Border.all(color: AppColors.auctionOrange.withAlpha(50)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              width: 6.w,
-                              height: 6.w,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            SizedBox(width: 4.w),
+                            Icon(Icons.timer_rounded, size: 14.w, color: AppColors.auctionOrange),
+                            SizedBox(width: 6.w),
                             Text(
-                              isAr ? 'مباشر' : 'LIVE',
+                              timeLeft,
                               style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9.sp,
+                                fontSize: 11.sp,
                                 fontWeight: FontWeight.w800,
-                                letterSpacing: 0.5,
+                                color: AppColors.auctionOrange,
                               ),
                             ),
                           ],
                         ),
                       ),
+                    SizedBox(height: 12.h),
+                    
+                    // Title
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.slate900,
+                      ),
                     ),
-                    // Time left
-                    if (timeLeft.isNotEmpty)
-                      Positioned(
-                        top: 8.w,
-                        right: 8.w,
-                        child: Container(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: 8.w, vertical: 4.h),
+                    SizedBox(height: 8.h),
+                    
+                    // Bid Status
+                    Row(
+                      children: [
+                        Text(
+                          isAr ? 'أعلى مزايدة حالية:' : 'Highest Bid:',
+                          style: TextStyle(
+                            fontSize: 11.sp,
+                            color: AppColors.slate500,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(width: 6.w),
+                        Text(
+                          '$currentBid $currency',
+                          style: TextStyle(
+                            fontSize: 15.sp,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.primary600, // Primary Green
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8.h),
+                    
+                    // Bids count and Arrow
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isAr ? 'عدد المزايدات: $bidsCount' : 'Bids: $bidsCount',
+                          style: TextStyle(
+                            fontSize: 11.sp,
+                            color: AppColors.slate400,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Container(
+                          padding: EdgeInsets.all(6.w),
                           decoration: BoxDecoration(
-                            color: Colors.black.withAlpha(150),
-                            borderRadius: BorderRadius.circular(8.r),
+                            color: AppColors.primary50,
+                            shape: BoxShape.circle,
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.timer_rounded,
-                                  size: 11.w, color: Colors.white),
-                              SizedBox(width: 3.w),
-                              Text(
-                                timeLeft,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10.sp,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
+                          child: Icon(Icons.arrow_forward_ios_rounded, size: 12.w, color: AppColors.primary600),
                         ),
-                      ),
+                      ],
+                    ),
                   ],
-                ),
-              ),
-              // ── Info ──────────────────────────────────
-              Expanded(
-                flex: 2,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(12.w, 8.h, 12.w, 8.h),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13.sp,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.slate800,
-                        ),
-                      ),
-                      const Spacer(),
-                      Row(
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                isAr ? 'المزايدة الحالية' : 'Current Bid',
-                                style: TextStyle(
-                                  fontSize: 9.sp,
-                                  color: AppColors.slate400,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Text(
-                                '${double.tryParse(currentBid)?.toStringAsFixed(0) ?? currentBid} $currency',
-                                style: TextStyle(
-                                  fontSize: 14.sp,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.auctionOrange,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 10.w, vertical: 6.h),
-                            decoration: BoxDecoration(
-                              gradient: AppColors.auctionGradient,
-                              borderRadius: BorderRadius.circular(8.r),
-                            ),
-                            child: Text(
-                              isAr ? 'زايد' : 'Bid',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 11.sp,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
                 ),
               ),
             ],

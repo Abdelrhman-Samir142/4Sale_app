@@ -6,7 +6,7 @@ class ApiConstants {
   // Override at build time: flutter run --dart-define=API_BASE_URL=https://your-domain.com/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.1.6:8000/api/v1',
+    defaultValue: 'http://192.168.1.5:8000/api/v1',
   );
 
   // ── Auth ──────────────────────────────────────────────────────

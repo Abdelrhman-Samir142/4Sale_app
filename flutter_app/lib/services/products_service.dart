@@ -40,11 +40,14 @@ class ProductsService {
     }
   }
 
-  /// GET /products/{id}/
   static Future<Product> get(String id) async {
     try {
       final response = await _dio.get(ApiConstants.productDetail(id));
-      return Product.fromJson(response.data as Map<String, dynamic>);
+      final data = response.data as Map<String, dynamic>;
+      if (data.containsKey('owner') && !data.containsKey('seller')) {
+        data['seller'] = data['owner'];
+      }
+      return Product.fromJson(data);
     } on DioException catch (e) {
       throw Exception(parseDioError(e));
     }

@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../services/wishlist_service.dart';
 import '../home/widgets/home_product_card.dart';
+import '../../shared/widgets/app_search_bar.dart';
 
 class StoreScreen extends ConsumerStatefulWidget {
   const StoreScreen({super.key});
@@ -24,6 +25,9 @@ class _StoreScreenState extends ConsumerState<StoreScreen> with TickerProviderSt
   bool _loading = true;
   String? _error;
   String _selectedCategory = 'all';
+  double? _minPrice;
+  double? _maxPrice;
+  String? _condition;
 
   late AnimationController _bgCtrl;
 
@@ -45,19 +49,32 @@ class _StoreScreenState extends ConsumerState<StoreScreen> with TickerProviderSt
     if (!mounted) return;
     setState(() { _loading = true; _error = null; });
     try {
+      final queryParams = <String, dynamic>{};
+      if (_selectedCategory != 'all') queryParams['category'] = _selectedCategory;
+      if (_minPrice != null) queryParams['min_price'] = _minPrice;
+      if (_maxPrice != null) queryParams['max_price'] = _maxPrice;
+      if (_condition != null) queryParams['condition'] = _condition;
+
       final res = await DioClient.instance.get(
         ApiConstants.products,
-        queryParameters: _selectedCategory != 'all' ? {'category': _selectedCategory} : null,
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
       );
       if (!mounted) return;
       final data = res.data;
       setState(() {
         _products.clear();
-        if (data is Map && data['results'] != null) {
-          _products.addAll(data['results'] as List);
-        } else if (data is List) {
-          _products.addAll(data);
-        }
+        final rawProducts = data is Map && data['results'] != null 
+            ? (data['results'] as List) 
+            : (data is List ? data : []);
+            
+        final authState = ref.read(authProvider);
+        final currentUserId = authState.userId;
+        
+        _products.addAll(rawProducts.where((p) {
+          final isPending = p['status'] == 'pending';
+          final isOwner = currentUserId != null && p['owner_id'] == currentUserId;
+          return !isPending || isOwner;
+        }));
       });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -123,6 +140,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> with TickerProviderSt
                 physics: const BouncingScrollPhysics(),
                 slivers: [
                   _buildSliverAppBar(isAr),
+                  const SliverToBoxAdapter(child: AppSearchBar()),
                   _buildCategoryFilter(categories, isAr),
                   if (_loading)
                     const SliverToBoxAdapter(child: Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppColors.primary500))))
@@ -297,6 +315,23 @@ class _StoreScreenState extends ConsumerState<StoreScreen> with TickerProviderSt
           }
         },
       ),
+      actions: [
+        IconButton(
+          icon: Container(
+            padding: EdgeInsets.all(8.w),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: Colors.black.withAlpha(13), blurRadius: 4, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: const Icon(Icons.tune_rounded, color: AppColors.slate900, size: 18),
+          ),
+          onPressed: _showFilterSheet,
+        ),
+        SizedBox(width: 8.w),
+      ],
     );
   }
 
@@ -349,6 +384,228 @@ class _StoreScreenState extends ConsumerState<StoreScreen> with TickerProviderSt
           },
         ),
       ),
+    );
+  }
+
+  void _showFilterSheet() {
+    final lang = ref.read(languageProvider);
+    final isAr = lang.locale == 'ar';
+    
+    // Local state for the bottom sheet
+    double? tempMinPrice = _minPrice;
+    double? tempMaxPrice = _maxPrice;
+    String? tempCondition = _condition;
+
+    // Price options (min, max)
+    final priceOptions = [
+      {'label': isAr ? 'الكل' : 'All', 'min': null, 'max': null},
+      {'label': isAr ? 'أقل من 1,000' : 'Under 1,000', 'min': null, 'max': 1000.0},
+      {'label': '1,000 - 5,000', 'min': 1000.0, 'max': 5000.0},
+      {'label': '5,000 - 10,000', 'min': 5000.0, 'max': 10000.0},
+      {'label': isAr ? 'أكثر من 10,000' : 'Above 10,000', 'min': 10000.0, 'max': null},
+    ];
+
+    // Condition options
+    final conditionOptions = [
+      {'label': isAr ? 'الكل' : 'All', 'value': null},
+      {'label': isAr ? 'جديد' : 'New', 'value': 'new'},
+      {'label': isAr ? 'شبه جديد' : 'Like New', 'value': 'like-new'},
+      {'label': isAr ? 'جيد' : 'Good', 'value': 'good'},
+      {'label': isAr ? 'مقبول' : 'Acceptable', 'value': 'fair'},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setStateSheet) {
+            return Container(
+              padding: EdgeInsets.only(top: 24.h),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(32.r)),
+              ),
+              child: SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Handle bar
+                    Center(
+                      child: Container(
+                        width: 40.w,
+                        height: 5.h,
+                        decoration: BoxDecoration(color: AppColors.slate300, borderRadius: BorderRadius.circular(10.r)),
+                      ),
+                    ),
+                    SizedBox(height: 24.h),
+                    
+                    // Title
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20.w),
+                      child: Text(
+                        isAr ? 'تصفية المنتجات' : 'Filter Products',
+                        style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.w900, color: AppColors.slate900),
+                      ),
+                    ),
+                    SizedBox(height: 24.h),
+
+                    // Scrollable Area
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.symmetric(horizontal: 20.w),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Price Section
+                            Text(
+                              isAr ? 'نطاق السعر (جنيه)' : 'Price Range (EGP)',
+                              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w800, color: AppColors.slate800),
+                            ),
+                            SizedBox(height: 12.h),
+                            Wrap(
+                              spacing: 8.w,
+                              runSpacing: 10.h,
+                              children: priceOptions.map((opt) {
+                                final isSelected = tempMinPrice == opt['min'] && tempMaxPrice == opt['max'];
+                                return ChoiceChip(
+                                  label: Text(opt['label'] as String),
+                                  selected: isSelected,
+                                  onSelected: (selected) {
+                                    if (selected) {
+                                      setStateSheet(() {
+                                        tempMinPrice = opt['min'] as double?;
+                                        tempMaxPrice = opt['max'] as double?;
+                                      });
+                                    }
+                                  },
+                                  selectedColor: AppColors.primary50,
+                                  backgroundColor: Colors.white,
+                                  labelStyle: TextStyle(
+                                    color: isSelected ? AppColors.primary600 : AppColors.slate600,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20.r),
+                                    side: BorderSide(color: isSelected ? AppColors.primary400 : AppColors.slate200),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                            SizedBox(height: 24.h),
+
+                            // Condition Section
+                            Text(
+                              isAr ? 'حالة المنتج' : 'Condition',
+                              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w800, color: AppColors.slate800),
+                            ),
+                            SizedBox(height: 12.h),
+                            Wrap(
+                              spacing: 8.w,
+                              runSpacing: 10.h,
+                              children: conditionOptions.map((opt) {
+                                final isSelected = tempCondition == opt['value'];
+                                return ChoiceChip(
+                                  label: Text(opt['label'] as String),
+                                  selected: isSelected,
+                                  onSelected: (selected) {
+                                    if (selected) {
+                                      setStateSheet(() {
+                                        tempCondition = opt['value'] as String?;
+                                      });
+                                    }
+                                  },
+                                  selectedColor: AppColors.primary50,
+                                  backgroundColor: Colors.white,
+                                  labelStyle: TextStyle(
+                                    color: isSelected ? AppColors.primary600 : AppColors.slate600,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20.r),
+                                    side: BorderSide(color: isSelected ? AppColors.primary400 : AppColors.slate200),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                            SizedBox(height: 32.h),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Fixed Footer with Action Buttons
+                    Container(
+                      padding: EdgeInsets.fromLTRB(20.w, 16.h, 20.w, 16.h),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 10, offset: const Offset(0, -5)),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          // Reset Button
+                          Expanded(
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                padding: EdgeInsets.symmetric(vertical: 14.h),
+                                side: const BorderSide(color: AppColors.slate300),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+                              ),
+                              onPressed: () {
+                                setStateSheet(() {
+                                  tempMinPrice = null;
+                                  tempMaxPrice = null;
+                                  tempCondition = null;
+                                });
+                              },
+                              child: Text(
+                                isAr ? 'إعادة ضبط' : 'Reset',
+                                style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, color: AppColors.slate700),
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 12.w),
+                          // Apply Button
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary600,
+                                elevation: 0,
+                                padding: EdgeInsets.symmetric(vertical: 14.h),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+                              ),
+                              onPressed: () {
+                                // Update main state and fetch
+                                setState(() {
+                                  _minPrice = tempMinPrice;
+                                  _maxPrice = tempMaxPrice;
+                                  _condition = tempCondition;
+                                });
+                                Navigator.pop(ctx);
+                                _fetchProducts();
+                              },
+                              child: Text(
+                                isAr ? 'تطبيق' : 'Apply Filters',
+                                style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

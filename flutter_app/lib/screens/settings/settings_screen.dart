@@ -123,7 +123,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         HapticFeedback.selectionClick();
                         setState(() => _notifBids = v);
                       },
-                      activeThumbColor: AppColors.primary600,
+                      activeColor: AppColors.primary600,
                       activeTrackColor: AppColors.primary200,
                     ),
                   ),
@@ -138,7 +138,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         HapticFeedback.selectionClick();
                         setState(() => _notifMessages = v);
                       },
-                      activeThumbColor: AppColors.primary600,
+                      activeColor: AppColors.primary600,
                       activeTrackColor: AppColors.primary200,
                     ),
                   ),
@@ -153,7 +153,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         HapticFeedback.selectionClick();
                         setState(() => _notifAgent = v);
                       },
-                      activeThumbColor: AppColors.primary600,
+                      activeColor: AppColors.primary600,
                       activeTrackColor: AppColors.primary200,
                     ),
                   ),
@@ -168,7 +168,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         HapticFeedback.selectionClick();
                         setState(() => _notifPromo = v);
                       },
-                      activeThumbColor: AppColors.primary600,
+                      activeColor: AppColors.primary600,
                       activeTrackColor: AppColors.primary200,
                     ),
                   ),

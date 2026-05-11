@@ -10,6 +10,8 @@ import '../../core/constants/app_colors.dart';
 import '../../shared/widgets/app_shimmer.dart';
 import '../../shared/widgets/app_empty_state.dart';
 import '../../shared/widgets/offline_banner.dart';
+import '../../shared/widgets/app_search_bar.dart';
+import '../../providers/auth_provider.dart';
 import 'dart:async';
 
 class AuctionsScreen extends ConsumerStatefulWidget {
@@ -56,8 +58,17 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
     final dict = lang.dict;
     final isAr = lang.locale == 'ar';
 
+    final auth = ref.watch(authProvider);
+    final currentUserId = auth.userId;
+
     // Filter displayed list based on selected tab
-    final allItems = pState.items;
+    final allItems = pState.items.where((a) {
+      if (a is! Map) return false;
+      // product is an integer ID from AuctionSerializer, not a Map
+      final isPending = a['status'] == 'pending';
+      final isOwner = currentUserId != null && a['owner_id'] == currentUserId;
+      return !isPending || isOwner;
+    }).toList();
     final endingSoon = allItems.where((a) {
       final endStr = a['end_time'] as String?;
       if (endStr == null) return false;
@@ -87,6 +98,10 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
                 children: [
                   // ── Header ──────────────────────────────────
                   _buildHeader(isAr, dict),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: AppSearchBar(),
+                  ),
                   // ── Tab Bar ─────────────────────────────────
                   _buildTabBar(isAr),
                   // ── Content ─────────────────────────────────
@@ -449,8 +464,7 @@ class _PremiumAuctionCardState extends State<_PremiumAuctionCard>
     final currentBid = a['current_bid']?.toString() ?? '0';
     final totalBids = (a['total_bids'] as num?)?.toInt() ?? 0;
     final currency = widget.dict['currency'] as String;
-    final image = a['product_image'] as String? ??
-        a['product']?['primary_image'] as String?;
+    final image = a['product_image'] as String?;
     final productId =
         a['product']?.toString() ?? a['product_id']?.toString() ?? '';
 

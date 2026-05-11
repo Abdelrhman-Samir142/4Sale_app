@@ -11,6 +11,7 @@ import '../../screens/auth/forgot_password_screen.dart';
 import '../../screens/home/home_screen.dart';
 import '../../screens/product/product_detail_screen.dart';
 import '../../screens/sell/sell_screen.dart';
+import '../../screens/sell/success_screen.dart';
 import '../../screens/auctions/auctions_screen.dart';
 import '../../screens/profile/profile_screen.dart';
 import '../../screens/profile/edit_profile_screen.dart';
@@ -18,6 +19,7 @@ import '../../screens/wishlist/wishlist_screen.dart';
 import '../../screens/messages/conversations_screen.dart';
 import '../../screens/messages/chat_screen.dart';
 import '../../screens/agent/agent_screen.dart';
+import '../../screens/smart_agent/smart_agent_screen.dart';
 import '../../screens/search/smart_search_screen.dart';
 import '../../screens/notifications/notifications_screen.dart';
 import '../../screens/settings/settings_screen.dart';
@@ -202,6 +204,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/success',
+        name: 'success',
+        builder: (context, state) => const SuccessScreen(),
+      ),
+      GoRoute(
         path: '/wishlist',
         name: 'wishlist',
         builder: (context, state) => const WishlistScreen(),
@@ -218,6 +225,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/agent',
         name: 'agent',
         builder: (context, state) => const AgentScreen(),
+      ),
+      GoRoute(
+        path: '/smart-agent',
+        name: 'smartAgent',
+        builder: (context, state) => const SmartAgentScreen(),
       ),
       GoRoute(
         path: '/search',

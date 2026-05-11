@@ -9,6 +9,7 @@ import '../../core/constants/app_colors.dart';
 import '../../services/auctions_service.dart';
 import '../../services/stats_service.dart';
 import '../../services/wishlist_service.dart';
+import '../../providers/auctions_provider.dart';
 
 // ── Decoupled UI widgets ────────────────────────────────────────────
 import 'widgets/home_app_bar.dart';
@@ -28,9 +29,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   // ── State ──────────────────────────────────────────────────────────
-  List<dynamic> _auctions = [];
   Map<String, dynamic> _stats = {};
-  bool _loadingAuctions = true;
   bool _loadingStats = true;
 
   final _scrollController = ScrollController();
@@ -50,24 +49,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // ── Data fetching ─────────────────────────────────────────────────
   Future<void> _fetchAll() async {
-    _fetchAuctions();
+    ref.read(paginatedAuctionsProvider.notifier).refresh();
     _fetchStats();
     _prefetchWishlist();
-  }
-
-  Future<void> _fetchAuctions() async {
-    setState(() => _loadingAuctions = true);
-    try {
-      final res = await AuctionsService.list(activeOnly: true);
-      if (mounted) {
-        setState(() {
-          _auctions = res.take(5).toList();
-          _loadingAuctions = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loadingAuctions = false);
-    }
   }
 
   Future<void> _fetchStats() async {
@@ -143,6 +127,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final homeDict =
         dict['home'] as Map<String, dynamic>? ?? _fallbackHomeDict(lang.locale);
 
+    final pState = ref.watch(paginatedAuctionsProvider);
+    
+    // Filter active and non-expired auctions
+    final activeAuctions = pState.items.where((a) {
+      if (a is! Map) return false;
+      
+      // 1. Must not be pending (product is an integer ID, not a Map)
+      final isPending = a['status'] == 'pending';
+      if (isPending) return false;
+      
+      // 2. Must not be expired
+      final endStr = a['end_time'] as String? ?? a['auction_end_time'] as String?;
+      if (endStr == null) return false;
+      try {
+        final end = DateTime.parse(endStr);
+        final remaining = end.difference(DateTime.now());
+        if (remaining.isNegative) return false;
+      } catch (_) {
+        return false;
+      }
+      
+      return true;
+    }).take(5).toList();
+
     return Directionality(
       textDirection: lang.textDirection,
       child: Scaffold(
@@ -152,11 +160,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: FloatingActionButton(
             onPressed: () {
               HapticFeedback.mediumImpact();
-              context.push('/search');
+              context.push('/agent');
             },
             backgroundColor: AppColors.primary600,
             elevation: 6,
-            child: const Icon(Icons.smart_toy_rounded, color: Colors.white),
+            child: const Icon(Icons.support_agent, color: Colors.white, size: 28),
           ),
         ),
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -201,8 +209,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   // ── Auctions Carousel ────────────────────
                   SliverToBoxAdapter(
                     child: AuctionsCarousel(
-                      auctions: _auctions,
-                      loading: _loadingAuctions,
+                      auctions: activeAuctions,
+                      loading: pState.isLoading && pState.items.isEmpty,
                       lang: lang,
                     ),
                   ),
