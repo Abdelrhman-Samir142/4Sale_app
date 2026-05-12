@@ -20,6 +20,7 @@ from .views import (
     get_agent_targets,
     notifications_list,
     notifications_mark_read,
+    notifications_delete,
     notifications_unread_count,
     get_categories,
     health_check,
@@ -74,6 +75,7 @@ urlpatterns = [
     # Notifications
     path('notifications/', notifications_list, name='notifications-list'),
     path('notifications/mark-read/', notifications_mark_read, name='notifications-mark-read'),
+    path('notifications/delete/', notifications_delete, name='notifications-delete'),
     path('notifications/unread-count/', notifications_unread_count, name='notifications-unread-count'),
     
     # Router URLs

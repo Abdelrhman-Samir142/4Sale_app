@@ -151,37 +151,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             ],
           ),
         ),
-        floatingActionButton: kDebugMode
-            ? FloatingActionButton.extended(
-                onPressed: () {
-                  final types = [
-                    {'title': 'مزايدة جديدة', 'msg': 'قام شخص بالمزايدة على منتجك بمبلغ 500 ريال.', 'reasoning': 'تم تحليل السعر بواسطة الذكاء الاصطناعي كأفضل عرض.'},
-                    {'title': 'رسالة جديدة', 'msg': 'لديك رسالة جديدة بخصوص إعلانك للسيارة.', 'reasoning': null},
-                    {'title': 'انخفاض السعر', 'msg': 'انخفض سعر المنتج الذي تتابعه بنسبة 20%.', 'reasoning': null},
-                    {'title': 'مرحباً بك', 'msg': 'أهلاً بك في تطبيق 4Sale! نتمنى لك تجربة ممتعة.', 'reasoning': null},
-                  ];
-                  
-                  final randomType = types[DateTime.now().millisecond % types.length];
-                  
-                  setState(() {
-                    _notifications.insert(0, {
-                      'id': DateTime.now().millisecondsSinceEpoch,
-                      'title': isAr ? randomType['title'] : 'Test Notification',
-                      'message': isAr ? randomType['msg'] : 'This is a test notification.',
-                      'reasoning': randomType['reasoning'],
-                      'created_at': DateTime.now().toIso8601String(),
-                      'is_read': false,
-                    });
-                  });
-                },
-                backgroundColor: AppColors.primary600,
-                icon: const Icon(Icons.bug_report_rounded, color: Colors.white),
-                label: Text(
-                  isAr ? 'إشعار تجريبي' : 'Test Notif',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-              )
-            : null,
+        floatingActionButton: null,
       ),
     );
   }
@@ -284,7 +254,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             GestureDetector(
               onTap: () async {
                 HapticFeedback.lightImpact();
-                await NotificationsService.markAllRead();
+                await NotificationsService.markRead();
                 _fetch();
               },
               child: Container(
@@ -361,16 +331,29 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   child: Icon(Icons.delete_outline_rounded,
                       color: Colors.white, size: 22.w),
                 ),
-                onDismissed: (_) {
+                onDismissed: (_) async {
                   HapticFeedback.lightImpact();
-                  setState(
-                      () => _notifications.removeWhere((x) => x['id'] == n['id']));
+                  final id = n['id'];
+                  setState(() => _notifications.removeWhere((x) => x['id'] == id));
+                  try {
+                    await NotificationsService.delete(id: id);
+                  } catch (_) {}
                 },
-                child: _NotifCard(
-                  notification: n,
-                  style: style,
-                  isRead: isRead,
-                  isAr: isAr,
+                child: GestureDetector(
+                  onTap: () async {
+                    if (n['is_read'] != true) {
+                      setState(() => n['is_read'] = true);
+                      try {
+                        await NotificationsService.markRead(id: n['id']);
+                      } catch (_) {}
+                    }
+                  },
+                  child: _NotifCard(
+                    notification: n,
+                    style: style,
+                    isRead: isRead,
+                    isAr: isAr,
+                  ),
                 ).animate()
                     .fadeIn(
                         delay: Duration(milliseconds: 40 * itemIndex),

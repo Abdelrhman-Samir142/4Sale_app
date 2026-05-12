@@ -18,7 +18,6 @@ import '../../screens/profile/edit_profile_screen.dart';
 import '../../screens/wishlist/wishlist_screen.dart';
 import '../../screens/messages/conversations_screen.dart';
 import '../../screens/messages/chat_screen.dart';
-import '../../screens/agent/agent_screen.dart';
 import '../../screens/smart_agent/smart_agent_screen.dart';
 import '../../screens/search/smart_search_screen.dart';
 import '../../screens/notifications/notifications_screen.dart';
@@ -206,7 +205,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/success',
         name: 'success',
-        builder: (context, state) => const SuccessScreen(),
+        builder: (context, state) {
+          final type = state.uri.queryParameters['type'] ?? 'store';
+          return SuccessScreen(redirectTo: type);
+        },
       ),
       GoRoute(
         path: '/wishlist',
@@ -220,11 +222,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           final id = int.parse(state.pathParameters['id']!);
           return ChatScreen(conversationId: id);
         },
-      ),
-      GoRoute(
-        path: '/agent',
-        name: 'agent',
-        builder: (context, state) => const AgentScreen(),
       ),
       GoRoute(
         path: '/smart-agent',

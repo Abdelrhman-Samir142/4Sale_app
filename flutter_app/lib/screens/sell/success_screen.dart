@@ -6,11 +6,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/language_provider.dart';
 import '../../core/constants/app_colors.dart';
 
-class SuccessScreen extends ConsumerWidget {
-  const SuccessScreen({super.key});
+class SuccessScreen extends ConsumerStatefulWidget {
+  final String redirectTo;
+  const SuccessScreen({super.key, this.redirectTo = 'store'});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SuccessScreen> createState() => _SuccessScreenState();
+}
+
+class _SuccessScreenState extends ConsumerState<SuccessScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Auto-redirect to the correct page after 4 seconds
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        final path = widget.redirectTo == 'auction' ? '/store?auctions_only=true' : '/store';
+        context.go(path);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final lang = ref.watch(languageProvider);
     final isAr = lang.locale == 'ar';
 

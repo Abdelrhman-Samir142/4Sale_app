@@ -223,22 +223,36 @@ class AuctionViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Auction.objects.select_related(
         'product', 'product__owner', 'highest_bidder'
     ).prefetch_related('bids', 'product__images')
-    serializer_class = AuctionSerializer
     permission_classes = [AllowAny]
-    
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            from .serializers import AuctionDetailSerializer
+            return AuctionDetailSerializer
+        return AuctionSerializer
+
     def get_queryset(self):
-        # NOTE: close_expired_auctions() removed from here — it was running
-        # a full table scan + writes on every list request. Use a Celery
-        # periodic task or management command instead (see marketplace/tasks.py).
-        
-        queryset = super().get_queryset()
-        
-        # Only filter active auctions if explicitly requested
-        active_only = self.request.query_params.get('active_only', 'false')
-        if active_only == 'true':
-            queryset = queryset.filter(is_active=True, end_time__gt=timezone.now())
-        
+        from django.db.models import Count
+
+        # Simple, reliable queryset
+        queryset = Auction.objects.select_related(
+            'product', 'product__owner', 'highest_bidder'
+        ).prefetch_related(
+            'product__images'
+        ).annotate(
+            annotated_total_bids=Count('bids', distinct=True)
+        )
+
         return queryset.order_by('-is_active', '-end_time')
+
+    from django.utils.decorators import method_decorator
+    from django.views.decorators.cache import cache_page
+
+    @method_decorator(cache_page(60), name='dispatch')
+    def list(self, request, *args, **kwargs):
+        """Cached list of auctions for 60 seconds to beat network latency"""
+        return super().list(request, *args, **kwargs)
+
     
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def place_bid(self, request, pk=None):
@@ -677,8 +691,24 @@ def notifications_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def notifications_mark_read(request):
-    """Mark all notifications as read for the current user"""
-    Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+    """Mark notifications as read. Optionally takes notification_id."""
+    notif_id = request.data.get('notification_id')
+    if notif_id:
+        Notification.objects.filter(user=request.user, id=notif_id).update(is_read=True)
+    else:
+        Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+    return Response({'status': 'ok'})
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def notifications_delete(request):
+    """Delete notifications. Optionally takes notification_id."""
+    notif_id = request.data.get('notification_id')
+    if notif_id:
+        Notification.objects.filter(user=request.user, id=notif_id).delete()
+    else:
+        Notification.objects.filter(user=request.user).delete()
     return Response({'status': 'ok'})
 
 
@@ -729,7 +759,7 @@ def health_check(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def visual_search_view(request):
     """
     Visual Search: Accept an uploaded image, generate its embedding,
@@ -756,27 +786,26 @@ def visual_search_view(request):
         
         results = []
         for product in products:
-            primary_image = product.images.first()
-            if not primary_image:
+            # Check if we already have the embedding stored
+            product_embedding = product.visual_embedding
+
+            if not product_embedding:
+                # If not stored, we skip it for now to avoid timeout
+                # It will be populated by the background script
                 continue
 
-            # For now, generate text embedding from product title+desc as proxy
-            # (since we don't store image embeddings in DB yet)
-            from ai.vision_service import get_text_embedding
-            try:
-                product_embedding = get_text_embedding(f"{product.title} {product.description} {product.category}")
-                similarity = cosine_similarity(query_embedding, product_embedding)
-                results.append({
-                    'product': product,
-                    'similarity': similarity,
-                })
-            except Exception as e:
-                logger.warning(f"[VisualSearch] Skipping product {product.id}: {e}")
-                continue
+            # Pure visual similarity: Image Embedding vs Image Embedding
+            score = cosine_similarity(query_embedding, product_embedding)
+            similarity = round(score * 100, 1)
+            
+            results.append({
+                'product': product,
+                'similarity': similarity,
+            })
 
-        # Sort by similarity descending, take top 10
+        # Sort by similarity descending, take top 3
         results.sort(key=lambda x: x['similarity'], reverse=True)
-        top_results = results[:10]
+        top_results = results[:3]
 
         # Serialize results
         serialized = []

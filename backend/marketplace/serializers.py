@@ -49,33 +49,55 @@ class BidSerializer(serializers.ModelSerializer):
 
 
 class AuctionSerializer(serializers.ModelSerializer):
-    """Auction serializer with bidding history"""
-    bids = BidSerializer(many=True, read_only=True)
+    """Auction serializer with bidding history (optimized)"""
     highest_bidder_name = serializers.CharField(source='highest_bidder.username', read_only=True, allow_null=True)
     total_bids = serializers.SerializerMethodField()
     product_title = serializers.CharField(source='product.title', read_only=True)
     product_image = serializers.SerializerMethodField()
+    product_status = serializers.CharField(source='product.status', read_only=True)
+    owner_id = serializers.IntegerField(source='product.owner.id', read_only=True)
     
     class Meta:
         model = Auction
         fields = [
-            'id', 'product', 'product_title', 'product_image',
-            'starting_bid', 'current_bid', 'highest_bidder', 
+            'id', 'product', 'product_title', 'product_image', 'product_status',
+            'owner_id', 'starting_bid', 'current_bid', 'highest_bidder', 
             'highest_bidder_name', 'start_time', 'end_time', 
-            'is_active', 'total_bids', 'bids'
+            'is_active', 'total_bids'
         ]
         read_only_fields = ['id', 'current_bid', 'highest_bidder']
 
     def get_total_bids(self, obj):
-        return obj.bids.count()
+        # Use annotated value from queryset for maximum speed
+        return getattr(obj, 'annotated_total_bids', obj.bids.count())
 
     def get_product_image(self, obj):
-        primary_img = obj.product.images.filter(is_primary=True).first()
-        if primary_img:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(primary_img.image.url)
+        """Get product image URL — works with Cloudinary and local storage."""
+        try:
+            primary_img = obj.product.images.filter(is_primary=True).first()
+            if not primary_img:
+                primary_img = obj.product.images.first()
+            if primary_img and primary_img.image:
+                url = primary_img.image.url
+                # Cloudinary URLs are already absolute
+                if url.startswith('http'):
+                    return url
+                # Local files need the request to build absolute URI
+                request = self.context.get('request')
+                if request:
+                    return request.build_absolute_uri(url)
+                return url
+        except Exception:
+            pass
         return None
+
+
+class AuctionDetailSerializer(AuctionSerializer):
+    """Detailed auction serializer including full bidding history"""
+    bids = BidSerializer(many=True, read_only=True)
+    
+    class Meta(AuctionSerializer.Meta):
+        fields = AuctionSerializer.Meta.fields + ['bids']
 
 
 class ProductListSerializer(serializers.ModelSerializer):
@@ -187,26 +209,44 @@ def run_auto_bidding(auction, detected_item):
 
     potential_agents = list(
         UserAgent.objects.filter(
-            target_item=detected_item,
             is_active=True,
             max_budget__gte=min_required_budget
+        ).filter(
+            # Flexible match: match English ID OR Arabic label
+            models.Q(target_item=detected_item) | 
+            models.Q(target_item=YOLO_CLASS_LABELS.get(detected_item, ''))
         ).exclude(user=seller)
          .exclude(user=auction.highest_bidder)
          .select_related('user', 'user__profile')
     )
     
-    # Filter by wallet balance
-    potential_agents = [a for a in potential_agents if a.user.profile.wallet_balance >= min_required_budget]
+    # Pre-filter by balance and notifications
+    filtered_agents = []
+    for agent in potential_agents:
+        # 1. Wallet Balance Check
+        if agent.user.profile.wallet_balance < min_required_budget:
+            # Notify once per hour about low balance
+            from django.utils import timezone
+            if not Notification.objects.filter(
+                user=agent.user,
+                title="⚠️ رصيد غير كافٍ للوكيل",
+                created_at__gt=timezone.now() - timezone.timedelta(hours=1)
+            ).exists():
+                Notification.objects.create(
+                    user=agent.user,
+                    title="⚠️ رصيد غير كافٍ للوكيل",
+                    message=f"الوكيل '{agent.target_item}' حاول المزايدة على '{auction.product.title}' لكن رصيدك {agent.user.profile.wallet_balance} ج.م وهو غير كافٍ.",
+                    related_product=auction.product
+                )
+            continue
+            
+        # 2. Duplicate Notification Check (don't process same product twice)
+        if Notification.objects.filter(related_product=auction.product, user=agent.user).exists():
+            continue
+            
+        filtered_agents.append(agent)
     
-    already_notified_user_ids = set(
-        Notification.objects.filter(
-            related_product=auction.product,
-            user__in=[a.user for a in potential_agents]
-        ).values_list('user_id', flat=True)
-    )
-    potential_agents = [a for a in potential_agents if a.user_id not in already_notified_user_ids]
-    
-    if not potential_agents:
+    if not filtered_agents:
         return
     
     from ai.agent_graph import smart_agent_evaluator
@@ -234,7 +274,7 @@ def run_auto_bidding(auction, detected_item):
             return agent, True, "طابق الفئة المطلوبة (تلقائي)"
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(_evaluate_single_agent, agent): agent for agent in potential_agents}
+        futures = {executor.submit(_evaluate_single_agent, agent): agent for agent in filtered_agents}
         for future in as_completed(futures):
             try:
                 agent, is_match, reason = future.result(timeout=30)
@@ -597,45 +637,50 @@ class ProductCreateSerializer(serializers.ModelSerializer):
                     order=idx
                 )
             
-            # ── AI Agent Trigger ──────────────────────────────
-            # If this is an auction, run YOLO on the first image
-            # and trigger auto-bidding for matching agents.
+            # ── AI Agent Trigger (Async) ──────────────────────
             if auction and uploaded_images:
-                try:
-                    first_image = product.images.filter(is_primary=True).first()
-                    if first_image and first_image.image:
+                def run_ai_tasks():
+                    try:
+                        first_image = product.images.filter(is_primary=True).first()
+                        if not first_image or not first_image.image:
+                            return
+
                         try:
-                            # Local storage uses path
                             image_path = first_image.image.path
                         except NotImplementedError:
-                            # Cloud storage (Cloudinary) uses url
                             image_path = first_image.image.url
                             
-                        from ai.classifier import classify_image
+                        from ai.classifier import classify_image, guess_item_from_text
+                        logger.info(f"[Agent] 🤖 Starting background classification for product {product.id}...")
                         result = classify_image(image_path)
                         detected_item = result.get('detected_class')
+                        
+                        # Fallback: Guess from text if image classification fails
+                        if not detected_item:
+                            logger.info(f"[Agent] ⚠️ Image detection failed for {product.id}, trying text guess...")
+                            detected_item = guess_item_from_text(product.title)
+
                         if detected_item:
-                            # Store on Product for counter-bid lookup
                             product.detected_item = detected_item
                             product.save(update_fields=['detected_item'])
-                            logger.info(f"[Agent] 🔍 Detected '{detected_item}' — checking agents...")
-                            # Start Celery task for AI evaluation and bidding
+                            logger.info(f"[Agent] 🔍 Identified as '{detected_item}' — triggering agents...")
+                            
+                            # Trigger auto-bidding
                             try:
                                 from .tasks import run_auto_bidding_celery
                                 run_auto_bidding_celery.delay(auction.id, detected_item)
-                                logger.info(f"[Agent] 🚀 Dispatched Celery task for '{detected_item}'")
-                            except Exception as celery_err:
-                                # Fallback to thread if celery is not running/imported
-                                logger.warning(f"[Agent] Celery dispatch failed, using Thread: {celery_err}")
-                                import threading
-                                threading.Thread(
-                                    target=run_auto_bidding_async,
-                                    args=(auction.id, detected_item),
-                                    daemon=True
-                                ).start()
-                except Exception as e:
-                    # Agent failure should NOT block product creation
-                    logger.error(f"[Agent] Auto-bidding error (non-blocking): {e}", exc_info=True)
+                            except Exception:
+                                run_auto_bidding_async(auction.id, detected_item)
+                        else:
+                            logger.warning(f"[Agent] ❌ Could not identify product {product.id} (image/text)")
+                    except Exception as e:
+                        logger.error(f"[Agent] Background AI error: {e}")
+                    finally:
+                        from django.db import connection
+                        connection.close()
+
+                # Launch in thread so response is sent immediately
+                threading.Thread(target=run_ai_tasks, daemon=True).start()
             # ──────────────────────────────────────────────────
             
             return product

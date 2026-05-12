@@ -131,7 +131,8 @@ class PaginatedAuctionsNotifier
   }
 
   Future<void> refresh() async {
-    state = const PaginatedAuctionsState();
+    // Keep existing items, just show loading state so UI doesn't blank out
+    state = state.copyWith(isLoading: state.items.isEmpty);
     await _loadInitial();
   }
 }

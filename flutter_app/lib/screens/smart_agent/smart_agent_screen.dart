@@ -18,6 +18,7 @@ class SmartAgentScreen extends ConsumerStatefulWidget {
 
 class _SmartAgentScreenState extends ConsumerState<SmartAgentScreen> {
   List<dynamic> _agents = [];
+  List<dynamic> _targets = [];
   bool _loading = true;
 
   @override
@@ -30,6 +31,7 @@ class _SmartAgentScreenState extends ConsumerState<SmartAgentScreen> {
     setState(() => _loading = true);
     try {
       final res = await DioClient.instance.get(ApiConstants.agents);
+      final targetsRes = await DioClient.instance.get(ApiConstants.agentTargets);
       final data = res.data;
       final List<dynamic> items;
       if (data is Map && data.containsKey('results')) {
@@ -39,7 +41,11 @@ class _SmartAgentScreenState extends ConsumerState<SmartAgentScreen> {
       } else {
         items = [];
       }
-      if (mounted) setState(() { _agents = items; _loading = false; });
+      if (mounted) setState(() { 
+        _agents = items; 
+        _targets = targetsRes.data as List<dynamic>;
+        _loading = false; 
+      });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -265,7 +271,10 @@ class _SmartAgentScreenState extends ConsumerState<SmartAgentScreen> {
       useRootNavigator: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return Container(
+        String? selectedTarget;
+        return StatefulBuilder(
+          builder: (context, setStateSheet) {
+            return Container(
           padding: EdgeInsets.only(
             left: 20.w, right: 20.w, top: 24.h,
             bottom: MediaQuery.of(ctx).viewInsets.bottom + 24.h,
@@ -282,13 +291,25 @@ class _SmartAgentScreenState extends ConsumerState<SmartAgentScreen> {
                 SizedBox(height: 24.h),
                 Text(isAr ? 'إنشاء وكيل جديد' : 'Create New Agent', style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.w900, color: AppColors.slate900)),
                 SizedBox(height: 24.h),
-                TextField(
-                  controller: targetC,
+                DropdownButtonFormField<String>(
+                  value: selectedTarget,
                   decoration: InputDecoration(
-                    labelText: isAr ? 'المنتج المستهدف (مثل: لابتوب، هاتف)' : 'Target Item (e.g. laptop, phone)',
+                    labelText: isAr ? 'المنتج المستهدف' : 'Target Item',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(16.r)),
                     prefixIcon: const Icon(Icons.category_rounded),
                   ),
+                  items: _targets.map((t) {
+                    return DropdownMenuItem<String>(
+                      value: t['id'].toString(),
+                      child: Text(isAr ? (t['label_ar'] ?? t['label']) : t['label']),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    setStateSheet(() {
+                      selectedTarget = val;
+                      targetC.text = val ?? '';
+                    });
+                  },
                 ),
                 SizedBox(height: 16.h),
                 TextField(
@@ -338,8 +359,10 @@ class _SmartAgentScreenState extends ConsumerState<SmartAgentScreen> {
               ],
             ),
           ),
-        );
-      },
-    );
+        );  // Container
+          },  // StatefulBuilder builder
+        );  // StatefulBuilder
+      },  // showModalBottomSheet builder
+    );  // showModalBottomSheet
   }
 }

@@ -176,29 +176,88 @@ def get_available_targets():
 # Lazy-loaded model instance
 _model = None
 
+def _normalize_arabic(text: str) -> str:
+    """Normalize Arabic text for fuzzy matching: taa marbuta, alef, etc."""
+    if not text:
+        return ""
+    t = text
+    t = t.replace('ة', 'ه')      # taa marbuta → haa
+    t = t.replace('أ', 'ا')      # alef hamza above → alef
+    t = t.replace('إ', 'ا')      # alef hamza below → alef
+    t = t.replace('آ', 'ا')      # alef madda → alef
+    t = t.replace('ى', 'ي')      # alef maqsura → yaa
+    t = t.replace('ؤ', 'و')      # waw hamza → waw
+    t = t.replace('ئ', 'ي')      # yaa hamza → yaa
+    return t.strip()
+
+# Direct keyword → YOLO class mapping (covers common Egyptian Arabic)
+_KEYWORD_MAP = {
+    # Appliances
+    'غساله': 'washing_machine', 'غسال': 'washing_machine', 'اوتوماتيك': 'washing_machine',
+    'ثلاجه': 'fridge', 'تلاجه': 'fridge',
+    'بوتاجاز': 'cooker', 'فرن': 'cooker',
+    'ميكروويف': 'microwave',
+    'خلاط': 'blender',
+    'تكييف': 'ac_unit', 'تكيف': 'ac_unit',
+    'مروحه': 'fan',
+    'دفايه': 'heater', 'سخان': 'water_heater',
+    'مكواه': 'iron', 'مكنسه': 'vacuum_cleaner',
+    'فلتر': 'water_filter', 'ديب فريزر': 'freighter',
+    # Electronics (product types first, brands last)
+    'تلفزيون': 'tv', 'شاشه': 'tv', 'تليفزيون': 'tv',
+    'لابتوب': 'laptop', 'لاب': 'laptop', 'كمبيوتر': 'computer',
+    'موبايل': 'mobile_phone', 'تليفون': 'phone',
+    'كاميرا': 'camera', 'سماعه': 'headphone', 'ايربودز': 'airpods',
+    'سبيكر': 'speaker', 'رسيفر': 'receiver', 'راوتر': 'router',
+    'طابعه': 'printer', 'برنتر': 'printer',
+    'ساعه': 'watch', 'بلايستيشن': 'ps_console', 'ps': 'ps_console',
+    'كيسه': 'pc_case',
+    'ايفون': 'phone', 'سامسونج': 'phone',  # brands last
+    # Furniture
+    'سرير': 'bed', 'كرسي': 'chair', 'كنبه': 'sofa', 'انتريه': 'sofa',
+    'طاوله': 'table', 'ترابيزه': 'table', 'مكتب': 'office',
+    'دولاب': 'wardrobe', 'خزنه': 'safe', 'خزانه': 'cabinet',
+    'ستاره': 'curtain', 'مرايه': 'mirror', 'نجفه': 'lamp', 'اباجوره': 'lamp',
+    'سفره': 'food_trip', 'تسريحه': 'Dressing Table',
+    # Cars / Real Estate / Books
+    'عربيه': 'car', 'سياره': 'car',
+    'شقه': 'building', 'عقار': 'building',
+    'كتاب': 'book',
+    # Scrap
+    'خرده': 'korda', 'نحاس': 'copper_wire', 'المنيوم': 'aluminum', 'موتور': 'mator',
+}
+
+
 def guess_item_from_text(text: str) -> str:
     """
-    Fallback: If YOLO fails or HF space is down, try to guess the class from the product title.
-    Matches Arabic words in the title to the YOLO classes.
+    Fallback: If YOLO fails or HF space is down, guess the class from the product title.
+    Uses normalized Arabic matching to handle taa marbuta / alef variants.
     """
     if not text:
         return None
-        
+
+    text_norm = _normalize_arabic(text.lower())
+
+    # 1. Check the direct keyword map (normalized)
+    for keyword, yolo_class in _KEYWORD_MAP.items():
+        if _normalize_arabic(keyword) in text_norm:
+            logger.info(f"[TextGuess] Matched keyword '{keyword}' → '{yolo_class}' in '{text}'")
+            return yolo_class
+
+    # 2. Check English keys from CATEGORY_MAP
     text_lower = text.lower()
-    
-    # First check exact English keys
     for key in CATEGORY_MAP.keys():
         if key.lower() in text_lower:
             return key
-            
-    # Then check Arabic labels
+
+    # 3. Check Arabic YOLO labels (normalized)
     for key, ar_label in YOLO_CLASS_LABELS.items():
-        # Split by " / " for labels like 'طاولة / ترابيزة'
         labels = [l.strip() for l in ar_label.split('/')]
         for label in labels:
-            if label and label in text_lower:
+            if label and _normalize_arabic(label) in text_norm:
+                logger.info(f"[TextGuess] Matched label '{label}' → '{key}' in '{text}'")
                 return key
-                
+
     return None
 
 def _lookup_category(class_name: str):
@@ -339,22 +398,32 @@ def classify_image(image_path: str) -> dict:
 
         print(f"[AI] 🔍 Hugging Face API returned YOLO class: '{best_class}'")
 
-        arabic_label = _lookup_category(best_class)
-
-        if not arabic_label:
-            logger.warning(f"Unknown class predicted: {best_class}")
-            # Try fuzzy match
+        # ── Step 5: Normalize and Validate ──
+        # Standardize to lowercase and underscores for reliable matching
+        normalized_class = best_class.lower().replace(' ', '_')
+        
+        # Try to find the canonical key in our map
+        canonical_key = None
+        for k in CATEGORY_MAP.keys():
+            if k.lower().replace(' ', '_') == normalized_class:
+                canonical_key = k
+                break
+        
+        if not canonical_key:
+            # Try fuzzy match if exact normalized match fails
             for k in CATEGORY_MAP.keys():
-                if k.lower() in best_class.lower():
-                    arabic_label = CATEGORY_MAP[k]
-                    best_class = k
+                if k.lower() in normalized_class or normalized_class in k.lower():
+                    canonical_key = k
                     break
+        
+        if not canonical_key:
+            logger.warning(f"Unknown class predicted and couldn't normalize: {best_class}")
+            return fallback
 
-            if not arabic_label:
-                return fallback
-
+        best_class = canonical_key
+        arabic_label = CATEGORY_MAP[best_class]
         category_id = ARABIC_TO_CATEGORY_ID.get(arabic_label, 'other')
-        print(f"[AI] ✅ Result: '{best_class}' → '{arabic_label}' ({category_id})")
+        print(f"[AI] ✅ Normalized Result: '{best_class}' → '{arabic_label}' ({category_id})")
 
         return {
             'category': category_id,

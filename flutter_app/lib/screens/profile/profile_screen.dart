@@ -595,7 +595,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   icon: Icons.smart_toy_rounded,
                   title: isAr ? 'الوكيل الذكي (AI)' : 'AI Agent',
                   color: const Color(0xFF6366F1),
-                  onTap: () => context.push('/agent'),
+                  onTap: () => context.push('/smart-agent'),
                 ),
                 _divider(),
                 _menuTile(

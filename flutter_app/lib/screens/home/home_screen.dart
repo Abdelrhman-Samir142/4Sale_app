@@ -38,7 +38,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchAll();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchAll();
+    });
   }
 
   @override
@@ -49,7 +51,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // ── Data fetching ─────────────────────────────────────────────────
   Future<void> _fetchAll() async {
-    ref.read(paginatedAuctionsProvider.notifier).refresh();
+    await ref.read(paginatedAuctionsProvider.notifier).refresh();
     _fetchStats();
     _prefetchWishlist();
   }
@@ -130,25 +132,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final pState = ref.watch(paginatedAuctionsProvider);
     
     // Filter active and non-expired auctions
-    final activeAuctions = pState.items.where((a) {
-      if (a is! Map) return false;
-      
-      // 1. Must not be pending (product is an integer ID, not a Map)
-      final isPending = a['status'] == 'pending';
-      if (isPending) return false;
+    final activeAuctions = pState.items.whereType<Map<String, dynamic>>().where((a) {
+      // 1. Must not be pending
+      final status = a['status']?.toString() ?? a['product_status']?.toString();
+      if (status == 'pending') return false;
       
       // 2. Must not be expired
-      final endStr = a['end_time'] as String? ?? a['auction_end_time'] as String?;
+      final endStr = a['end_time']?.toString() ?? a['auction_end_time']?.toString();
       if (endStr == null) return false;
+      
       try {
         final end = DateTime.parse(endStr);
-        final remaining = end.difference(DateTime.now());
-        if (remaining.isNegative) return false;
+        return !end.difference(DateTime.now()).isNegative;
       } catch (_) {
         return false;
       }
-      
-      return true;
     }).take(5).toList();
 
     return Directionality(

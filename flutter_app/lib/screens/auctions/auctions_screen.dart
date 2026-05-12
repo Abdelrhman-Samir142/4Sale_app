@@ -34,6 +34,10 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
     });
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(paginatedAuctionsProvider.notifier).refresh();
+    });
   }
 
   void _onScroll() {
@@ -62,15 +66,15 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
     final currentUserId = auth.userId;
 
     // Filter displayed list based on selected tab
-    final allItems = pState.items.where((a) {
-      if (a is! Map) return false;
-      // product is an integer ID from AuctionSerializer, not a Map
-      final isPending = a['status'] == 'pending';
+    final allItems = pState.items.whereType<Map<String, dynamic>>().where((a) {
+      final status = a['product_status']?.toString() ?? a['status']?.toString() ?? 'active';
+      final isPending = status == 'pending';
       final isOwner = currentUserId != null && a['owner_id'] == currentUserId;
       return !isPending || isOwner;
     }).toList();
+    
     final endingSoon = allItems.where((a) {
-      final endStr = a['end_time'] as String?;
+      final endStr = a['end_time']?.toString();
       if (endStr == null) return false;
       try {
         final end = DateTime.parse(endStr);
@@ -81,9 +85,14 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
       }
     }).toList();
 
+    final myBids = allItems.where((a) {
+      final highestBidderId = a['highest_bidder'];
+      return currentUserId != null && highestBidderId == currentUserId;
+    }).toList();
+
     final currentList = switch (_tabController.index) {
       1 => endingSoon,
-      2 => allItems, // "My Bids" placeholder
+      2 => myBids,
       _ => allItems,
     };
 
@@ -440,14 +449,25 @@ class _PremiumAuctionCardState extends State<_PremiumAuctionCard>
           final h = diff.inHours;
           final m = diff.inMinutes % 60;
           final s = diff.inSeconds % 60;
-          setState(() {
-            _timeLeft =
-                '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-            _isUrgent = diff.inHours < 1;
-          });
+          if (mounted) {
+            setState(() {
+              _timeLeft =
+                  '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+              _isUrgent = diff.inHours < 1;
+            });
+          }
         }
       });
     } catch (_) {}
+  }
+
+  @override
+  void didUpdateWidget(_PremiumAuctionCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.auction['end_time'] != widget.auction['end_time']) {
+      _timer?.cancel();
+      _startTimer();
+    }
   }
 
   @override

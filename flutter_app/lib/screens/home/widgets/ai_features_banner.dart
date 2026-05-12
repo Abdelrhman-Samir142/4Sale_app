@@ -88,7 +88,7 @@ class _AIFeaturesBannerState extends State<AIFeaturesBanner>
                   SizedBox(height: 16.h),
                   Row(children: [
                     Expanded(child: GestureDetector(
-                      onTap: () => context.push('/agent'),
+                      onTap: () => context.push('/smart-agent'),
                       child: Container(
                         padding: EdgeInsets.symmetric(vertical: 12.h),
                         decoration: BoxDecoration(

@@ -6,7 +6,7 @@ class ApiConstants {
   // Override at build time: flutter run --dart-define=API_BASE_URL=https://your-domain.com/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://4-sale-app.vercel.app/api/v1',
+    defaultValue: 'http://192.168.1.3:8000/api/v1',
   );
 
   // ── Auth ──────────────────────────────────────────────────────
@@ -65,6 +65,7 @@ class ApiConstants {
   // ── Notifications ─────────────────────────────────────────────
   static const String notifications = '/notifications/';
   static const String notificationsMarkRead = '/notifications/mark-read/';
+  static const String notificationsDelete = '/notifications/delete/';
   static const String notificationsUnreadCount = '/notifications/unread-count/';
 
   // ── General Stats ─────────────────────────────────────────────

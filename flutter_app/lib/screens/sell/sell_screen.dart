@@ -152,7 +152,8 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         imagePaths: _images.map((x) => x.path).toList(),
       );
       if (mounted) {
-        context.go('/success');
+        final type = _isAuction ? 'auction' : 'store';
+        context.go('/success?type=$type');
       }
     } catch (e) {
       setState(() { _error = e.toString(); });

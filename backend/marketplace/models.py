@@ -17,6 +17,8 @@ class UserProfile(models.Model):
     wallet_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_sales = models.IntegerField(default=0)
     seller_rating = models.DecimalField(max_digits=3, decimal_places=2, default=0)
+    rating_count = models.IntegerField(default=0)
+    role = models.CharField(max_length=50, default='user')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -68,6 +70,7 @@ class Product(models.Model):
     phone_number = models.CharField(max_length=20, blank=True, default='')
     is_auction = models.BooleanField(default=False)
     detected_item = models.CharField(max_length=100, blank=True, default='', help_text='YOLO detected class name for agent matching')
+    visual_embedding = models.JSONField(null=True, blank=True, help_text='2048-dim vector for visual search')
     auction_end_time = models.DateTimeField(null=True, blank=True)
     views_count = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -96,6 +99,9 @@ class ProductImage(models.Model):
     class Meta:
         db_table = 'product_images'
         ordering = ['order', '-is_primary']
+        indexes = [
+            models.Index(fields=['is_primary']),
+        ]
     
     def __str__(self):
         return f"Image for {self.product.title}"

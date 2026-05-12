@@ -80,7 +80,7 @@ class UnreadNotificationsNotifier extends AsyncNotifier<int> {
   }
 
   Future<void> markAllRead() async {
-    await NotificationsService.markAllRead();
+    await NotificationsService.markRead();
     _lastCount = 0;
     state = const AsyncData(0);
   }

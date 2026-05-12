@@ -17,9 +17,24 @@ class NotificationsService {
   }
 
   /// POST /notifications/mark-read/
-  static Future<void> markAllRead() async {
+  static Future<void> markRead({int? id}) async {
     try {
-      await _dio.post(ApiConstants.notificationsMarkRead);
+      await _dio.post(
+        ApiConstants.notificationsMarkRead,
+        data: id != null ? {'notification_id': id} : null,
+      );
+    } on DioException catch (e) {
+      throw Exception(parseDioError(e));
+    }
+  }
+
+  /// DELETE /notifications/delete/
+  static Future<void> delete({int? id}) async {
+    try {
+      await _dio.delete(
+        ApiConstants.notificationsDelete,
+        data: id != null ? {'notification_id': id} : null,
+      );
     } on DioException catch (e) {
       throw Exception(parseDioError(e));
     }

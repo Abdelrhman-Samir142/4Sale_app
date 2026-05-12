@@ -21,7 +21,7 @@ def setup_langsmith():
     key = os.environ.get("LANGCHAIN_API_KEY", "").strip().strip('"').strip("'")
     if key:
         os.environ.setdefault("LANGSMITH_API_KEY", key)
-        os.environ["LANGCHAIN_TRACING_V2"] = os.environ.get("LANGCHAIN_TRACING_V2", "true")
+        os.environ["LANGCHAIN_TRACING_V2"] = os.environ.get("LANGCHAIN_TRACING_V2", "false")
         os.environ["LANGCHAIN_PROJECT"] = os.environ.get("LANGCHAIN_PROJECT", "4Sale-RAG-LangGraph")
         logger.info(
             f"[Config] LangSmith tracing enabled  project={os.environ['LANGCHAIN_PROJECT']}"

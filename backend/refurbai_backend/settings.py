@@ -100,9 +100,9 @@ import dj_database_url
 DATABASE_URL = os.getenv('DATABASE_URL')
 
 if DATABASE_URL:
-    print("Connecting to Neon PostgreSQL...")
+    print("Connecting to Neon PostgreSQL (Optimized)...")
     DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL)
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
 else:
     print("DATABASE_URL not found, using SQLite fallback.")
@@ -147,6 +147,13 @@ if CLOUDINARY_URL:
             "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
+}
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

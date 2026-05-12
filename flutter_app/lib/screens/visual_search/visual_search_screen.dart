@@ -57,7 +57,12 @@ class _VisualSearchScreenState extends ConsumerState<VisualSearchScreen> {
       final response = await DioClient.instance.post(
         ApiConstants.visualSearch,
         data: formData,
-        options: Options(contentType: 'multipart/form-data'),
+        options: Options(
+          contentType: 'multipart/form-data',
+          // Visual search needs more time (OpenRouter embedding calls)
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
       );
 
       if (mounted) {
@@ -67,10 +72,19 @@ class _VisualSearchScreenState extends ConsumerState<VisualSearchScreen> {
         });
       }
     } catch (e) {
+      debugPrint('[VisualSearch] Error: $e');
       if (mounted) {
         final isAr = ref.read(languageProvider).locale == 'ar';
+        String errorMsg;
+        if (e is DioException && e.type == DioExceptionType.connectionTimeout) {
+          errorMsg = isAr ? 'انتهت المهلة. حاول مرة أخرى.' : 'Request timed out. Try again.';
+        } else if (e is DioException && e.type == DioExceptionType.receiveTimeout) {
+          errorMsg = isAr ? 'الخادم بطيء. حاول مرة أخرى.' : 'Server is slow. Try again.';
+        } else {
+          errorMsg = isAr ? 'فشل البحث. حاول مرة أخرى.' : 'Search failed. Try again.';
+        }
         setState(() {
-          _error = isAr ? 'فشل البحث. حاول مرة أخرى.' : 'Search failed. Try again.';
+          _error = errorMsg;
           _searching = false;
         });
       }

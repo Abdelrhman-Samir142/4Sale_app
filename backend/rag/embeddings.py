@@ -10,7 +10,6 @@ designed to capture maximum semantic meaning for Egyptian marketplace items.
 
 import os
 import logging
-import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +22,13 @@ _configured = False
 def _configure():
     global _configured
     if not _configured:
+        import google.generativeai as genai
         api_key = os.environ.get("GEMINI_API_KEY", "")
         genai.configure(api_key=api_key)
         _configured = True
+        return genai
+    import google.generativeai as genai
+    return genai
 
 
 def build_embedding_text(product) -> str:
@@ -75,7 +78,7 @@ def generate_embedding(text: str) -> list[float]:
     Call Gemini embedding API and return the vector.
     """
     try:
-        _configure()
+        genai = _configure()
         result = genai.embed_content(
             model=EMBEDDING_MODEL,
             content=text,
@@ -92,7 +95,7 @@ def generate_query_embedding(text: str) -> list[float]:
     Generate embedding specifically for queries (uses retrieval_query task type).
     """
     try:
-        _configure()
+        genai = _configure()
         result = genai.embed_content(
             model=EMBEDDING_MODEL,
             content=text,
