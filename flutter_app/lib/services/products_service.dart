@@ -123,6 +123,16 @@ class ProductsService {
     }
   }
 
+  /// POST /products/{id}/purchase/
+  static Future<Map<String, dynamic>> purchaseProduct(String id) async {
+    try {
+      final response = await _dio.post(ApiConstants.productPurchase(id));
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw Exception(parseDioError(e));
+    }
+  }
+
   /// GET /products/my_listings/
   static Future<List<Product>> getMyListings() async {
     try {

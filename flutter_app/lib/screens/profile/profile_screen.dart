@@ -32,7 +32,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void initState() {
     super.initState();
     _headerCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 3000))
+        vsync: this, duration: const Duration(milliseconds: 6000))
       ..repeat(reverse: true);
     _fetchListings();
   }

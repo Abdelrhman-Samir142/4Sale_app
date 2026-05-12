@@ -19,7 +19,7 @@ class StoreScreen extends ConsumerStatefulWidget {
   ConsumerState<StoreScreen> createState() => _StoreScreenState();
 }
 
-class _StoreScreenState extends ConsumerState<StoreScreen> with TickerProviderStateMixin {
+class _StoreScreenState extends ConsumerState<StoreScreen> {
   final List<dynamic> _products = [];
   Set<int> _wishlistIds = {};
   bool _loading = true;
@@ -29,21 +29,13 @@ class _StoreScreenState extends ConsumerState<StoreScreen> with TickerProviderSt
   double? _maxPrice;
   String? _condition;
 
-  late AnimationController _bgCtrl;
-
   @override
   void initState() {
     super.initState();
-    _bgCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 10))..repeat();
     _fetchProducts();
     _fetchWishlist();
   }
 
-  @override
-  void dispose() {
-    _bgCtrl.dispose();
-    super.dispose();
-  }
 
   Future<void> _fetchProducts() async {
     if (!mounted) return;
@@ -206,44 +198,39 @@ class _StoreScreenState extends ConsumerState<StoreScreen> with TickerProviderSt
   }
 
   Widget _buildAnimatedBg() {
-    return AnimatedBuilder(
-      animation: _bgCtrl,
-      builder: (_, __) {
-        return Stack(
-          children: [
-            Positioned(
-              top: -100.h, left: -50.w,
-              child: Container(
-                width: 300.w, height: 300.w,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      AppColors.primary500.withAlpha(13),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
+    return Stack(
+      children: [
+        Positioned(
+          top: -100.h, left: -50.w,
+          child: Container(
+            width: 300.w, height: 300.w,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  AppColors.primary500.withAlpha(13),
+                  Colors.transparent,
+                ],
               ),
             ),
-            Positioned(
-              bottom: 100.h, right: -100.w,
-              child: Container(
-                width: 400.w, height: 400.w,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      AppColors.slate500.withAlpha(13),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
+          ),
+        ),
+        Positioned(
+          bottom: 100.h, right: -100.w,
+          child: Container(
+            width: 400.w, height: 400.w,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  AppColors.slate500.withAlpha(13),
+                  Colors.transparent,
+                ],
               ),
             ),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
     );
   }
 

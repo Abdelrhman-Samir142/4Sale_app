@@ -14,6 +14,7 @@ import '../../services/wishlist_service.dart';
 import '../../services/chat_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/widgets/app_shimmer.dart';
+import '../../core/utils/app_snackbar.dart';
 import 'dart:async';
 import 'dart:ui';
 
@@ -278,7 +279,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 ),
                 // Info Chips
                 SliverToBoxAdapter(
-                  child: _buildInfoChips(p, dict, isAr),
+                  child: _buildInfoChips(p, dict, isAr, lang.dict),
                 ),
                 // Seller Info
                 if (owner != null)
@@ -983,7 +984,18 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   // INFO CHIPS
   // ═══════════════════════════════════════════════════════════════
   Widget _buildInfoChips(
-      Product p, Map<String, dynamic> dict, bool isAr) {
+      Product p, Map<String, dynamic> dict, bool isAr, Map<String, dynamic> langDict) {
+    
+    final catDict = langDict['categories'] as Map<String, dynamic>?;
+    final catLabel = catDict?[p.category] as String? ?? p.category;
+    
+    final addDict = langDict['addItem'] as Map<String, dynamic>?;
+    String condLabel = p.condition;
+    if (p.condition == 'new') condLabel = addDict?['conditionNew'] as String? ?? condLabel;
+    else if (p.condition == 'like-new') condLabel = addDict?['conditionLikeNew'] as String? ?? condLabel;
+    else if (p.condition == 'good') condLabel = addDict?['conditionGood'] as String? ?? condLabel;
+    else if (p.condition == 'fair') condLabel = addDict?['conditionFair'] as String? ?? condLabel;
+
     return Padding(
       padding: EdgeInsets.fromLTRB(20.w, 16.h, 20.w, 0),
       child: Wrap(
@@ -991,9 +1003,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         runSpacing: 8.h,
         children: [
           _premiumChip(Icons.category_rounded,
-              p.category, AppColors.latestBlue),
+              catLabel, AppColors.latestBlue),
           _premiumChip(Icons.star_rounded,
-              p.condition, AppColors.warningAmber),
+              condLabel, AppColors.warningAmber),
           if (p.location.isNotEmpty)
             _premiumChip(Icons.location_on_rounded,
                 p.location, AppColors.errorRed),
@@ -1123,6 +1135,25 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     ).animate().fadeIn(delay: 350.ms).slideY(begin: 0.05, end: 0);
   }
 
+  Future<void> _purchaseProduct() async {
+    final lang = ref.read(languageProvider);
+    final isAr = lang.locale == 'ar';
+    try {
+      await ProductsService.purchaseProduct(widget.productId);
+      if (mounted) {
+        AppSnackbar.success(context, isAr ? 'تم الشراء بنجاح!' : 'Purchased successfully!');
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        AppSnackbar.error(
+          context,
+          isAr ? 'فشل الشراء: ${e.toString().replaceAll('Exception: ', '')}' : 'Purchase failed: ${e.toString().replaceAll('Exception: ', '')}'
+        );
+      }
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // BOTTOM ACTION BAR
   // ═══════════════════════════════════════════════════════════════
@@ -1141,39 +1172,77 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         ],
       ),
       child: SafeArea(
-        child: GestureDetector(
-          onTap: _contactSeller,
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(vertical: 14.h),
-            decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
-              borderRadius: BorderRadius.circular(16.r),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary600.withAlpha(40),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.chat_bubble_outline_rounded,
-                    size: 20.w, color: Colors.white),
-                SizedBox(width: 8.w),
-                Text(
-                  dict['contactSeller'] as String,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15.sp,
-                    fontWeight: FontWeight.w700,
+        child: Row(
+          children: [
+            Expanded(
+              flex: 1,
+              child: GestureDetector(
+                onTap: _contactSeller,
+                child: Container(
+                  padding: EdgeInsets.symmetric(vertical: 14.h),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(16.r),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.chat_bubble_outline_rounded,
+                          size: 20.w, color: AppColors.slate700),
+                      SizedBox(width: 8.w),
+                      Text(
+                        dict['contactSeller'] as String,
+                        style: TextStyle(
+                          color: AppColors.slate700,
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
+            if (!isAuction) ...[
+              SizedBox(width: 12.w),
+              Expanded(
+                flex: 1,
+                child: GestureDetector(
+                  onTap: _purchaseProduct,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(vertical: 14.h),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                      borderRadius: BorderRadius.circular(16.r),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary600.withAlpha(40),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.shopping_cart_checkout_rounded,
+                            size: 20.w, color: Colors.white),
+                        SizedBox(width: 8.w),
+                        Text(
+                          isAr ? 'شراء' : 'Buy Now',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14.sp,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

@@ -404,7 +404,30 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         ],
 
         // AI detection badge
-        if (_aiDetectedClassAr != null) ...[
+        if (_isAnalyzingImage) ...[
+          SizedBox(height: 16.h),
+          Container(
+            padding: EdgeInsets.all(12.w),
+            decoration: BoxDecoration(
+              color: AppColors.primary50,
+              borderRadius: BorderRadius.circular(12.r),
+              border: Border.all(color: AppColors.primary200),
+            ),
+            child: Row(children: [
+              SizedBox(
+                width: 18.w, 
+                height: 18.w, 
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary600)
+              ),
+              SizedBox(width: 8.w),
+              Text(
+                  ref.read(languageProvider).locale == 'ar'
+                      ? 'جاري تحليل الصورة بالذكاء الاصطناعي...'
+                      : 'Analyzing image with AI...',
+                  style: TextStyle(fontSize: 13.sp, color: AppColors.primary700, fontWeight: FontWeight.w600)),
+            ]),
+          ).animate().fadeIn(delay: 100.ms),
+        ] else if (_aiDetectedClassAr != null) ...[
           SizedBox(height: 16.h),
           Container(
             padding: EdgeInsets.all(12.w),

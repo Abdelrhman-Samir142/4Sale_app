@@ -26,7 +26,6 @@ class AuctionsCarousel extends StatelessWidget {
         height: 380.h,
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
-          shrinkWrap: true,
           padding: EdgeInsets.symmetric(horizontal: 16.w),
           itemCount: 3,
           itemBuilder: (_, __) => Container(
@@ -77,7 +76,6 @@ class AuctionsCarousel extends StatelessWidget {
       height: 380.h,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        shrinkWrap: true,
         padding: EdgeInsets.symmetric(horizontal: 16.w),
         physics: const BouncingScrollPhysics(),
         itemCount: auctions.length,

@@ -41,7 +41,7 @@ class _HeroBannerState extends State<HeroBanner>
     _pageCtrl = PageController(viewportFraction: 0.92);
     _pulseCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
     _startAutoScroll();
   }

@@ -171,6 +171,52 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = ProductListSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
 
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def purchase(self, request, pk=None):
+        """Purchase a product, transferring wallet balance"""
+        from django.db import transaction
+        with transaction.atomic():
+            # Lock the product row
+            product = Product.objects.select_for_update().get(pk=pk)
+            
+            if product.status != 'active':
+                return Response({'error': 'المنتج غير متاح للبيع حالياً'}, status=status.HTTP_400_BAD_REQUEST)
+                
+            if product.owner == request.user:
+                return Response({'error': 'لا يمكنك شراء منتجك الخاص'}, status=status.HTTP_400_BAD_REQUEST)
+                
+            buyer_profile = request.user.profile
+            seller_profile = product.owner.profile
+            
+            if buyer_profile.wallet_balance < product.price:
+                return Response({'error': 'رصيد المحفظة غير كافٍ لإتمام عملية الشراء'}, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Transfer funds
+            buyer_profile.wallet_balance -= product.price
+            buyer_profile.save()
+            
+            seller_profile.wallet_balance += product.price
+            seller_profile.total_sales += 1
+            seller_profile.save()
+            
+            # Mark product as sold
+            product.status = 'sold'
+            product.save(update_fields=['status'])
+            
+            # Notify seller
+            try:
+                Notification.objects.create(
+                    user=product.owner,
+                    title='تم بيع منتجك!',
+                    message=f'لقد تم شراء منتج "{product.title}" وتمت إضافة {product.price} إلى محفظتك.',
+                    related_product=product
+                )
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to create purchase notification: {e}")
+            
+            return Response({'status': 'success', 'message': 'تم الشراء بنجاح'}, status=status.HTTP_200_OK)
+
 
 class AuctionViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for viewing auctions"""

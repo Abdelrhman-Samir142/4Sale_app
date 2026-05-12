@@ -68,11 +68,11 @@ class QuickActions extends StatelessWidget {
         route: '/visual-search',
       ),
       _QuickAction(
-        icon: Icons.auto_awesome_rounded,
-        label: homeDict['smartSearch'] as String? ?? (isAr ? 'البحث الذكي' : 'Smart Search'),
-        color: const Color(0xFF0284C7), // Deep Cyan
-        bgColor: const Color(0xFFF0F9FF), // Light Cyan bg
-        route: '/search',
+        icon: Icons.add_circle_outline_rounded,
+        label: homeDict['addListing'] as String? ?? (isAr ? 'أضف إعلان' : 'Add Listing'),
+        color: AppColors.primary600,
+        bgColor: AppColors.primary50,
+        route: '/sell',
       ),
     ];
   }
@@ -85,6 +85,7 @@ class QuickActions extends StatelessWidget {
       child: GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
+        addRepaintBoundaries: true,
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
           crossAxisSpacing: 10.w,

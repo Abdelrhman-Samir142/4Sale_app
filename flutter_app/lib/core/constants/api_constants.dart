@@ -6,7 +6,7 @@ class ApiConstants {
   // Override at build time: flutter run --dart-define=API_BASE_URL=https://your-domain.com/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.1.5:8000/api/v1',
+    defaultValue: 'https://4-sale-app.vercel.app/api/v1',
   );
 
   // ── Auth ──────────────────────────────────────────────────────
@@ -21,6 +21,7 @@ class ApiConstants {
   // ── Products ──────────────────────────────────────────────────
   static const String products = '/products/';
   static String productDetail(String id) => '/products/$id/';
+  static String productPurchase(String id) => '/products/$id/purchase/';
   static const String myListings = '/products/my_listings/';
   static String aiAnalysis(String id) => '/products/$id/ai_analysis/';
 

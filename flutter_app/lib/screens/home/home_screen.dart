@@ -156,15 +156,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFFFAFBFC),
         floatingActionButton: Padding(
-          padding: EdgeInsets.only(bottom: 80.h), // ارفعها فوق البار
+          padding: EdgeInsets.only(bottom: 80.h),
           child: FloatingActionButton(
             onPressed: () {
               HapticFeedback.mediumImpact();
-              context.push('/agent');
+              context.push('/search');
             },
-            backgroundColor: AppColors.primary600,
+            backgroundColor: const Color(0xFF0284C7),
             elevation: 6,
-            child: const Icon(Icons.support_agent, color: Colors.white, size: 28),
+            child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 28),
           ),
         ),
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
