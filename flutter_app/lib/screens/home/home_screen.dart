@@ -92,7 +92,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         'featuredProducts': 'منتجات مميزة',
         'marketplace': 'المتجر',
         'aiAgent': 'وكيل ذكي',
-        'smartSearch': 'بحث ذكي',
+        'smartSearch': 'مساعد ذكي',
         'addListing': 'أضف إعلان',
         'tryAgent': 'جرّب الوكيل',
         'currentBid': 'المزايدة الحالية',
@@ -160,7 +160,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               HapticFeedback.mediumImpact();
               context.push('/search');
             },
-            backgroundColor: const Color(0xFF0284C7),
+            backgroundColor: AppColors.primary600,
             elevation: 6,
             child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 28),
           ),

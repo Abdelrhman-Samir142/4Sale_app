@@ -196,7 +196,8 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# CORS Settings — locked to explicit origins in production
+# CORS Settings
+CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOWED_ORIGINS = os.getenv(
     'CORS_ALLOWED_ORIGINS',
     'http://localhost:3000,http://localhost:8000,http://127.0.0.1:8000,https://4-sale-i4pb4pu1p-abdelrhman-samir142s-projects.vercel.app'
@@ -212,14 +213,18 @@ CORS_ALLOW_HEADERS = [
 ]
 
 # ── Structured Logging ─────────────────────────────────────────
+# Detect if pythonjsonlogger is available (not installed locally)
+_json_logging_available = False
+try:
+    import pythonjsonlogger  # noqa: F401
+    _json_logging_available = True
+except ImportError:
+    pass
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
-        'json': {
-            'format': '%(asctime)s %(name)s %(levelname)s %(message)s',
-            'class': 'pythonjsonlogger.jsonlogger.JsonFormatter',
-        },
         'verbose': {
             'format': '[{asctime}] {levelname} {name}: {message}',
             'style': '{',
@@ -228,7 +233,7 @@ LOGGING = {
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'json' if not DEBUG else 'verbose',
+            'formatter': 'verbose',
         },
     },
     'root': {

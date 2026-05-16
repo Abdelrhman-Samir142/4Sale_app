@@ -158,6 +158,7 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
                                       auction: currentList[i],
                                       dict: dict,
                                       isAr: isAr,
+                                      isOwner: currentUserId != null && currentList[i]['owner_id'] == currentUserId,
                                     )
                                         .animate()
                                         .fadeIn(
@@ -232,40 +233,8 @@ class _AuctionsScreenState extends ConsumerState<AuctionsScreen>
               ],
             ),
           ),
-          // Live indicator
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
-            decoration: BoxDecoration(
-              color: AppColors.errorRed.withAlpha(15),
-              borderRadius: BorderRadius.circular(20.r),
-              border: Border.all(color: AppColors.errorRed.withAlpha(30)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 7.w,
-                  height: 7.w,
-                  decoration: const BoxDecoration(
-                    color: AppColors.errorRed,
-                    shape: BoxShape.circle,
-                  ),
-                )
-                    .animate(onPlay: (c) => c.repeat(reverse: true))
-                    .scaleXY(end: 1.3, duration: 800.ms),
-                SizedBox(width: 5.w),
-                Text(
-                  isAr ? 'مباشر' : 'LIVE',
-                  style: TextStyle(
-                    fontSize: 11.sp,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.errorRed,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Live indicator removed based on user request
+
         ],
       ),
     ).animate().fadeIn(duration: 300.ms).slideY(begin: -0.1, end: 0);
@@ -405,10 +374,12 @@ class _PremiumAuctionCard extends StatefulWidget {
   final dynamic auction;
   final Map<String, dynamic> dict;
   final bool isAr;
+  final bool isOwner;
   const _PremiumAuctionCard({
     required this.auction,
     required this.dict,
     required this.isAr,
+    required this.isOwner,
   });
   @override
   State<_PremiumAuctionCard> createState() => _PremiumAuctionCardState();
@@ -697,37 +668,38 @@ class _PremiumAuctionCardState extends State<_PremiumAuctionCard>
                             ),
                             const Spacer(),
                             // Bid button
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 14.w, vertical: 7.h),
-                              decoration: BoxDecoration(
-                                gradient: AppColors.auctionGradient,
-                                borderRadius: BorderRadius.circular(10.r),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.auctionOrange.withAlpha(30),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.gavel_rounded,
-                                      size: 13.w, color: Colors.white),
-                                  SizedBox(width: 4.w),
-                                  Text(
-                                    widget.isAr ? 'زايد' : 'Bid',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12.sp,
-                                      fontWeight: FontWeight.w700,
+                            if (_timeLeft != (widget.isAr ? 'انتهى' : 'Ended') && !widget.isOwner)
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 14.w, vertical: 7.h),
+                                decoration: BoxDecoration(
+                                  gradient: AppColors.auctionGradient,
+                                  borderRadius: BorderRadius.circular(10.r),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.auctionOrange.withAlpha(30),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 3),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.gavel_rounded,
+                                        size: 13.w, color: Colors.white),
+                                    SizedBox(width: 4.w),
+                                    Text(
+                                      widget.isAr ? 'زايد' : 'Bid',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12.sp,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ],

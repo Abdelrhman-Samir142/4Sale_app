@@ -6,6 +6,8 @@ class ApiConstants {
   // Override at build time: flutter run --dart-define=API_BASE_URL=https://your-domain.com/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
+    // Use http://10.0.2.2:8000 for Android Emulator
+    // Use http://localhost:8000 for iOS Simulator / Web
     defaultValue: 'https://4-sale-app.vercel.app/api/v1',
   );
 
@@ -74,6 +76,16 @@ class ApiConstants {
   // ── RAG Smart Search ──────────────────────────────────────────
   static const String ragQuery = '/rag/query/';
 
+  // ── Chat Sessions (persisted) ─────────────────────────────────
+  static const String chatSessions = '/rag/sessions/';
+  static String chatSessionDetail(int id) => '/rag/sessions/$id/';
+  static String chatSessionSend(int id) => '/rag/sessions/$id/send/';
+
   // ── Visual Search ─────────────────────────────────────────────
   static const String visualSearch = '/visual-search/';
+
+  // ── Agent Pending Bids ────────────────────────────────────────
+  static const String pendingBids = '/agent-pending-bids/';
+  static String approvePendingBid(int id) => '/agent-pending-bids/$id/approve/';
+  static String rejectPendingBid(int id) => '/agent-pending-bids/$id/reject/';
 }

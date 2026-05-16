@@ -9,3 +9,6 @@
 # Dart
 -keep class * extends io.flutter.plugin.common.PluginRegistry$PluginRegistrantCallback { *; }
 -keep class * extends io.flutter.plugin.common.PluginRegistry$ActivityResultListener { *; }
+
+# Ignore missing Play Core classes (Fixes R8 release build error)
+-dontwarn com.google.android.play.core.**

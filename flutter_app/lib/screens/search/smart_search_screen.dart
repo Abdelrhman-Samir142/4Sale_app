@@ -1,995 +1,832 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../../providers/language_provider.dart';
-import '../../services/rag_service.dart';
-import '../../services/products_service.dart';
-import '../../models/product.dart';
-import '../../core/constants/app_colors.dart';
-import '../../shared/widgets/app_shimmer.dart';
-import 'dart:math' as math;
+import 'package:go_router/go_router.dart';
 
+import '../../core/constants/app_colors.dart';
+import '../../providers/language_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/chat_session_service.dart';
+import '../../services/rag_service.dart';
+
+// ── Message model ─────────────────────────────────────────────────
+class _Message {
+  final String role; // 'user' | 'assistant'
+  final String text;
+  final List<dynamic> products;
+  final bool isLoading;
+  const _Message({
+    required this.role,
+    required this.text,
+    this.products = const [],
+    this.isLoading = false,
+  });
+}
+
+// ── Main Screen ──────────────────────────────────────────────────
 class SmartSearchScreen extends ConsumerStatefulWidget {
   const SmartSearchScreen({super.key});
+
   @override
   ConsumerState<SmartSearchScreen> createState() => _SmartSearchScreenState();
 }
 
-class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen>
-    with TickerProviderStateMixin {
-  final _queryC = TextEditingController();
-  final _focusNode = FocusNode();
-  Map<String, dynamic>? _result;
-  // Real product objects fetched after RAG returns IDs
-  List<Product> _products = [];
-  bool _loading = false;
-  bool _loadingProducts = false;
-  String? _error;
-  late AnimationController _brainCtrl;
-  late AnimationController _waveCtrl;
+class _SmartSearchScreenState extends ConsumerState<SmartSearchScreen> {
+  // ── State ─────────────────────────────────────────────────────
+  final _inputCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  static const _suggestionsAr = [
-    'لابتوب رخيص أقل من 5000',
-    'أثاث مستعمل حالة جيدة',
-    'أجهزة إلكترونية في القاهرة',
-    'سيارات مستعملة أقل من 100000',
-    'موبايلات سامسونج جديدة',
-    'كراسي مكتب مستعملة',
-  ];
+  int? _sessionId;
+  List<_Message> _messages = [];
+  bool _sending = false;
 
-  static const _suggestionsEn = [
-    'Cheap laptop under 5000',
-    'Used furniture in good condition',
-    'Electronics in Cairo',
-    'Used cars under 100000',
-    'New Samsung phones',
-    'Used office chairs',
-  ];
+  // Sidebar: list of sessions
+  List<Map<String, dynamic>> _sessions = [];
+  bool _loadingSessions = false;
 
+  // ── Lifecycle ─────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
-    _brainCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat();
-    _waveCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2500),
-    )..repeat(reverse: true);
+    _initSession();
+    _loadSessions();
   }
 
   @override
   void dispose() {
-    _queryC.dispose();
-    _focusNode.dispose();
-    _brainCtrl.dispose();
-    _waveCtrl.dispose();
+    _inputCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _search([String? query]) async {
-    final q = query ?? _queryC.text.trim();
-    if (q.isEmpty) return;
-    _queryC.text = q;
-    _focusNode.unfocus();
-    HapticFeedback.lightImpact();
-    setState(() {
-      _loading = true;
-      _error = null;
-      _result = null;
-      _products = [];
-    });
+  // ── Initialise a new chat session ─────────────────────────────
+  Future<void> _initSession() async {
+    // Check if user is logged in
+    final auth = ref.read(authProvider);
+    if (!auth.isLoggedIn) return;
+
     try {
-      _result = await RagService.query(q);
-      
-      final productsData = (_result?['products_data'] as List?) ?? [];
-      if (productsData.isNotEmpty) {
-        setState(() => _loadingProducts = true);
-        final fetched = <Product>[];
-        for (final item in productsData) {
-          try {
-            fetched.add(Product.fromJson(item));
-          } catch (e) {
-            debugPrint('Failed to parse RAG product: $e');
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _products = fetched;
-            _loadingProducts = false;
-          });
-        }
+      final session = await ChatService.createSession();
+      if (mounted) {
+        setState(() => _sessionId = session['id'] as int?);
       }
-    } catch (e) {
-      _error = e.toString();
+    } catch (_) {
+      // Fallback: session-less mode (use legacy endpoint)
     }
-    if (mounted) setState(() => _loading = false);
   }
 
+  // ── Load sidebar sessions ─────────────────────────────────────
+  Future<void> _loadSessions() async {
+    final auth = ref.read(authProvider);
+    if (!auth.isLoggedIn) return;
+
+    setState(() => _loadingSessions = true);
+    try {
+      final sessions = await ChatService.getSessions();
+      if (mounted) setState(() => _sessions = sessions);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _loadingSessions = false);
+    }
+  }
+
+  // ── Load a specific session (history) ────────────────────────
+  Future<void> _loadSession(int sessionId) async {
+    try {
+      final data = await ChatService.getSession(sessionId);
+      final rawMessages = (data['messages'] as List?) ?? [];
+
+      setState(() {
+        _sessionId = sessionId;
+        _messages = rawMessages.map((m) {
+          final prods = (m['products_data'] as List?) ?? [];
+          return _Message(
+            role: m['role'] ?? 'user',
+            text: m['content'] ?? '',
+            products: prods,
+          );
+        }).toList();
+      });
+      _scrollToBottom();
+      if (mounted) Navigator.of(context).pop(); // close drawer
+    } catch (_) {}
+  }
+
+  // ── Delete a session ─────────────────────────────────────────
+  Future<void> _deleteSession(int sessionId) async {
+    try {
+      await ChatService.deleteSession(sessionId);
+      await _loadSessions();
+      // If we deleted the active session, start fresh
+      if (_sessionId == sessionId) {
+        setState(() {
+          _sessionId = null;
+          _messages = [];
+        });
+        await _initSession();
+      }
+    } catch (_) {}
+  }
+
+  // ── Send a message ────────────────────────────────────────────
+  Future<void> _send() async {
+    final text = _inputCtrl.text.trim();
+    if (text.isEmpty || _sending) return;
+
+    HapticFeedback.lightImpact();
+    _inputCtrl.clear();
+    setState(() {
+      _messages.add(_Message(role: 'user', text: text));
+      _messages.add(const _Message(role: 'assistant', text: '', isLoading: true));
+      _sending = true;
+    });
+    _scrollToBottom();
+
+    try {
+      Map<String, dynamic> result;
+      if (_sessionId != null) {
+        result = await ChatService.sendMessage(_sessionId!, text);
+      } else {
+        // Not logged in — use legacy stateless endpoint
+        result = await RagService.query(text);
+        // Wrap legacy format into session format
+        result = {
+          'answer': result,
+          'products_data': result['products_data'] ?? [],
+          'meta': {},
+        };
+      }
+
+      final answer = result['answer'] as Map<String, dynamic>? ?? {};
+      final summary = answer['summary'] as String? ?? 'لم أفهم السؤال. ممكن تكرره؟';
+      final products = (result['products_data'] as List?) ?? [];
+
+      setState(() {
+        _messages.removeLast(); // remove loading
+        _messages.add(_Message(
+          role: 'assistant',
+          text: summary,
+          products: products,
+        ));
+      });
+
+      // Refresh sessions sidebar (title may have auto-updated)
+      _loadSessions();
+    } catch (e) {
+      setState(() {
+        _messages.removeLast();
+        _messages.add(_Message(
+          role: 'assistant',
+          text: 'حصلت مشكلة في الاتصال. جرب تاني.',
+        ));
+      });
+    } finally {
+      if (mounted) setState(() => _sending = false);
+      _scrollToBottom();
+    }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  // ── Build ─────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(languageProvider);
-    final dict = lang.dict['search'] as Map<String, dynamic>;
     final isAr = lang.locale == 'ar';
-    final suggestions = isAr ? _suggestionsAr : _suggestionsEn;
+    final auth = ref.watch(authProvider);
 
     return Directionality(
       textDirection: lang.textDirection,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFF),
-        body: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            // ------------------------- Hero Header -------------------------
-            SliverToBoxAdapter(child: _buildHero(dict, isAr)),
-            // ------------------------- Search Bar -------------------------
-            SliverToBoxAdapter(child: _buildSearchBar(dict, isAr)),
-            // ------------------------- Content -------------------------
-            if (!_loading && _result == null && _error == null)
-              SliverToBoxAdapter(child: _buildSuggestions(suggestions, isAr)),
-            if (_loading) SliverToBoxAdapter(child: _buildLoadingState(isAr)),
-            if (_error != null)
-              SliverToBoxAdapter(child: _buildErrorState(isAr)),
-            if (_result != null && !_loading)
-              SliverToBoxAdapter(child: _buildResults(isAr)),
-            SliverToBoxAdapter(child: SizedBox(height: 100.h)),
+        key: _scaffoldKey,
+        backgroundColor: const Color(0xFFF8FAFC),
+        // ── Sidebar Drawer
+        drawer: _buildDrawer(isAr, lang),
+
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: Colors.black.withAlpha(10),
+          leading: IconButton(
+            icon: const Icon(Icons.menu_rounded, color: AppColors.slate700),
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(6.w),
+                decoration: BoxDecoration(
+                  color: AppColors.primary50,
+                  borderRadius: BorderRadius.circular(10.r),
+                ),
+                child: Icon(Icons.auto_awesome_rounded,
+                    color: AppColors.primary600, size: 18.w),
+              ),
+              SizedBox(width: 10.w),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isAr ? 'المساعد الذكي' : 'Smart Assistant',
+                    style: TextStyle(
+                        fontSize: 15.sp,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.slate900),
+                  ),
+                  Text(
+                    isAr ? 'مساعد 4Sale' : '4Sale AI Assistant',
+                    style: TextStyle(
+                        fontSize: 11.sp,
+                        color: AppColors.slate400,
+                        fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            if (auth.isLoggedIn)
+              IconButton(
+                icon: Icon(Icons.add_comment_rounded,
+                    color: AppColors.primary600, size: 22.w),
+                tooltip: isAr ? 'محادثة جديدة' : 'New Chat',
+                onPressed: () async {
+                  setState(() {
+                    _sessionId = null;
+                    _messages = [];
+                  });
+                  await _initSession();
+                  await _loadSessions();
+                },
+              ),
+            SizedBox(width: 4.w),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1),
+            child: Container(height: 1, color: AppColors.slate100),
+          ),
+        ),
+
+        body: Column(
+          children: [
+            // ── Chat messages
+            Expanded(
+              child: _messages.isEmpty
+                  ? _buildEmptyState(isAr)
+                  : ListView.builder(
+                      controller: _scrollCtrl,
+                      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+                      itemCount: _messages.length,
+                      itemBuilder: (_, i) => _buildMessageBubble(_messages[i], isAr),
+                    ),
+            ),
+
+            // ── Input bar
+            _buildInputBar(isAr),
           ],
         ),
       ),
     );
   }
 
-  // -----------------------------------------------------------------------
-  // HERO
-  // -----------------------------------------------------------------------
-  Widget _buildHero(Map<String, dynamic> dict, bool isAr) {
-    return Stack(
-      children: [
-        // Background
-        Container(
-          height: 230.h,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF0F4C3A)],
-            ),
-            borderRadius: BorderRadius.only(
-              bottomLeft: Radius.circular(32.r),
-              bottomRight: Radius.circular(32.r),
-            ),
-          ),
-        ),
-        // Animated particles
-        ...List.generate(5, (i) {
-          return AnimatedBuilder(
-            animation: _brainCtrl,
-            builder: (_, __) {
-              final phase = _brainCtrl.value * 2 * math.pi + (i * 1.26);
-              final r = (50 + i * 20).toDouble();
-              final cx = MediaQuery.of(context).size.width / 2;
-              final x = cx + math.cos(phase) * r.w - 4.w;
-              final y = 100.h + math.sin(phase) * (r * 0.5).h;
-              return Positioned(
-                left: x,
-                top: y,
-                child: Container(
-                  width: (4 + i * 2).w,
-                  height: (4 + i * 2).w,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: [
-                      AppColors.primary400,
-                      const Color(0xFF7C3AED),
-                      AppColors.primary300,
-                      const Color(0xFF4F46E5),
-                      AppColors.successGreen,
-                    ][i].withAlpha(60 + i * 15),
-                  ),
+  // ── Sidebar Drawer ────────────────────────────────────────────
+  Widget _buildDrawer(bool isAr, LanguageState lang) {
+    return Drawer(
+      backgroundColor: Colors.white,
+      width: 280.w,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Container(
+              padding: EdgeInsets.all(20.w),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppColors.primary600, AppColors.primary500],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-              );
-            },
-          );
-        }),
-        // Content
-        SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 20.h),
-            child: Column(
-              children: [
-                // Back + Title
-                Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        padding: EdgeInsets.all(8.w),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withAlpha(15),
-                          borderRadius: BorderRadius.circular(12.r),
-                        ),
-                        child: Icon(
-                          Icons.arrow_back_rounded,
-                          size: 20.w,
-                          color: Colors.white,
-                        ),
-                      ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.history_rounded, color: Colors.white, size: 22.w),
+                  SizedBox(width: 10.w),
+                  Text(
+                    isAr ? 'سجل المحادثات' : 'Chat History',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w800,
                     ),
-                    SizedBox(width: 12.w),
-                    Text(
-                      dict['title'] as String,
-                      style: TextStyle(
-                        fontSize: 20.sp,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ).animate().fadeIn(duration: 300.ms),
-                SizedBox(height: 20.h),
-                // AI Brain Icon + Tagline
-                AnimatedBuilder(
-                  animation: _waveCtrl,
-                  builder: (_, __) {
-                    return Container(
-                      padding: EdgeInsets.all(18.w),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            AppColors.primary400.withAlpha(
-                              (40 + _waveCtrl.value * 30).toInt(),
-                            ),
-                            Colors.transparent,
-                          ],
-                          radius: 1.0 + _waveCtrl.value * 0.3,
-                        ),
-                      ),
-                      child: Container(
-                        padding: EdgeInsets.all(14.w),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withAlpha(12),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withAlpha(25),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.psychology_rounded,
-                          size: 32.w,
-                          color: Colors.white,
-                        ),
-                      ),
-                    );
-                  },
-                ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
-                SizedBox(height: 10.h),
-                Text(
-                  isAr
-                      ? 'اسأل الذكاء الاصطناعي عن أي شيء'
-                      : 'Ask AI about anything',
-                  style: TextStyle(
-                    fontSize: 15.sp,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
                   ),
-                ).animate().fadeIn(delay: 300.ms),
-                SizedBox(height: 3.h),
-                Text(
-                  isAr
-                      ? 'بيبحث في كل المنتجات ويلاقيلك الأنسب'
-                      : 'Searches all products to find the best match',
-                  style: TextStyle(
-                    fontSize: 12.sp,
-                    color: Colors.white.withAlpha(150),
-                  ),
-                ).animate().fadeIn(delay: 400.ms),
-              ],
+                ],
+              ),
             ),
-          ),
+
+            SizedBox(height: 8.h),
+
+            // Sessions list
+            Expanded(
+              child: _loadingSessions
+                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary500))
+                  : _sessions.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.chat_bubble_outline_rounded,
+                                  size: 40.w, color: AppColors.slate300),
+                              SizedBox(height: 12.h),
+                              Text(
+                                isAr ? 'مفيش محادثات سابقة' : 'No previous chats',
+                                style: TextStyle(
+                                    color: AppColors.slate400, fontSize: 14.sp),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: EdgeInsets.symmetric(vertical: 8.h),
+                          itemCount: _sessions.length,
+                          itemBuilder: (_, i) {
+                            final s = _sessions[i];
+                            final sid = s['id'] as int;
+                            final isActive = sid == _sessionId;
+                            return ListTile(
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 16.w, vertical: 4.h),
+                              leading: Container(
+                                padding: EdgeInsets.all(8.w),
+                                decoration: BoxDecoration(
+                                  color: isActive
+                                      ? AppColors.primary50
+                                      : AppColors.slate50,
+                                  borderRadius: BorderRadius.circular(10.r),
+                                ),
+                                child: Icon(
+                                  Icons.chat_rounded,
+                                  size: 18.w,
+                                  color: isActive
+                                      ? AppColors.primary600
+                                      : AppColors.slate400,
+                                ),
+                              ),
+                              title: Text(
+                                s['title'] ?? 'محادثة',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13.sp,
+                                  fontWeight: isActive
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isActive
+                                      ? AppColors.primary700
+                                      : AppColors.slate700,
+                                ),
+                              ),
+                              selected: isActive,
+                              selectedTileColor: AppColors.primary50,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12.r)),
+                              trailing: IconButton(
+                                icon: Icon(Icons.delete_outline_rounded,
+                                    size: 18.w, color: AppColors.slate400),
+                                onPressed: () => _deleteSession(sid),
+                              ),
+                              onTap: () => _loadSession(sid),
+                            );
+                          },
+                        ),
+            ),
+
+            // Back to home
+            Divider(color: AppColors.slate100, height: 1.h),
+            ListTile(
+              leading: Icon(Icons.arrow_back_rounded,
+                  color: AppColors.slate600, size: 20.w),
+              title: Text(
+                isAr ? 'الرئيسية' : 'Home',
+                style: TextStyle(
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.slate700),
+              ),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.go('/');
+              },
+            ),
+            SizedBox(height: 8.h),
+          ],
         ),
-      ],
+      ),
     );
   }
 
-  // -----------------------------------------------------------------------
-  // SEARCH BAR
-  // -----------------------------------------------------------------------
-  Widget _buildSearchBar(Map<String, dynamic> dict, bool isAr) {
-    return Transform.translate(
-      offset: Offset(0, -22.h),
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 20.w),
+  // ── Empty state ───────────────────────────────────────────────
+  Widget _buildEmptyState(bool isAr) {
+    final suggestions = isAr
+        ? ['لاب توب مستعمل بحالة جيدة', 'تلاجة بأقل من 3000 جنيه', 'موبايل Samsung في القاهرة', 'أثاث مكتبي للبيع']
+        : ['Used laptop in good condition', 'Fridge under 3000 EGP', 'Samsung phone in Cairo', 'Office furniture for sale'];
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(24.w),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: EdgeInsets.all(20.w),
+              decoration: BoxDecoration(
+                color: AppColors.primary50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.auto_awesome_rounded,
+                  size: 40.w, color: AppColors.primary500),
+            ),
+            SizedBox(height: 20.h),
+            Text(
+              isAr ? 'ابدأ محادثتك' : 'Start a conversation',
+              style: TextStyle(
+                  fontSize: 20.sp,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.slate800),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              isAr
+                  ? 'اسأل عن أي منتج وهنلاقيه ليك\nمن آلاف الإعلانات في مصر'
+                  : 'Ask about any product and we\'ll find it\nfrom thousands of listings in Egypt',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 14.sp,
+                  color: AppColors.slate500,
+                  height: 1.6,
+                  fontWeight: FontWeight.w500),
+            ),
+            SizedBox(height: 28.h),
+            // Suggestion chips
+            Wrap(
+              spacing: 8.w,
+              runSpacing: 10.h,
+              alignment: WrapAlignment.center,
+              children: suggestions.map((s) {
+                return GestureDetector(
+                  onTap: () {
+                    _inputCtrl.text = s;
+                    _send();
+                  },
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 9.h),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20.r),
+                      border: Border.all(color: AppColors.slate200),
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withAlpha(5),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2))
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.search_rounded,
+                            size: 14.w, color: AppColors.primary500),
+                        SizedBox(width: 6.w),
+                        Text(s,
+                            style: TextStyle(
+                                fontSize: 12.sp,
+                                color: AppColors.slate700,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Message bubble ────────────────────────────────────────────
+  Widget _buildMessageBubble(_Message msg, bool isAr) {
+    final isUser = msg.role == 'user';
+
+    if (msg.isLoading) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
         child: Container(
+          margin: EdgeInsets.only(bottom: 12.h),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20.r),
+            borderRadius: BorderRadius.circular(18.r).copyWith(
+              bottomLeft: Radius.circular(4.r),
+            ),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary600.withAlpha(12),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-              BoxShadow(
-                color: Colors.black.withAlpha(6),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
+                  color: Colors.black.withAlpha(8),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2))
             ],
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: TextField(
-                  controller: _queryC,
-                  focusNode: _focusNode,
-                  onSubmitted: (_) => _search(),
-                  style: TextStyle(fontSize: 14.sp, color: AppColors.slate800),
-                  decoration: InputDecoration(
-                    hintText: dict['placeholder'] as String,
-                    hintStyle: TextStyle(
-                      fontSize: 14.sp,
-                      color: AppColors.slate400,
-                    ),
-                    prefixIcon: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 14.w),
-                      child: Icon(
-                        Icons.search_rounded,
-                        size: 22.w,
-                        color: AppColors.primary500,
-                      ),
-                    ),
-                    prefixIconConstraints: BoxConstraints(
-                      minWidth: 48.w,
-                      minHeight: 48.h,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 0,
-                      vertical: 16.h,
-                    ),
-                  ),
-                ),
+              SizedBox(
+                width: 18.w,
+                height: 18.w,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary500),
               ),
-              // Search button
-              GestureDetector(
-                onTap: _loading ? null : _search,
-                child: Container(
-                  margin: EdgeInsets.only(right: 6.w),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 18.w,
-                    vertical: 12.h,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: AppColors.primaryGradient,
-                    borderRadius: BorderRadius.circular(14.r),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary600.withAlpha(30),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.auto_awesome,
-                    size: 20.w,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
+              SizedBox(width: 10.w),
+              Text(isAr ? 'جاري البحث...' : 'Searching...',
+                  style: TextStyle(
+                      color: AppColors.slate500,
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w500)),
             ],
           ),
         ),
-      ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1, end: 0),
-    );
-  }
+      );
+    }
 
-  // -----------------------------------------------------------------------
-  // SUGGESTIONS
-  // -----------------------------------------------------------------------
-  Widget _buildSuggestions(List<String> suggestions, bool isAr) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20.w, 0, 20.w, 0),
+    return Align(
+      alignment: isUser
+          ? AlignmentDirectional.centerEnd
+          : AlignmentDirectional.centerStart,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.lightbulb_outline_rounded,
-                size: 18.w,
-                color: AppColors.warningAmber,
-              ),
-              SizedBox(width: 6.w),
-              Text(
-                isAr ? 'جرّب تسأل عن:' : 'Try asking about:',
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.slate700,
-                ),
-              ),
-            ],
-          ).animate().fadeIn(delay: 300.ms),
-          SizedBox(height: 12.h),
-          Wrap(
-            spacing: 8.w,
-            runSpacing: 8.h,
-            children: suggestions.asMap().entries.map((e) {
-              return GestureDetector(
-                    onTap: () => _search(e.value),
-                    child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 14.w,
-                        vertical: 9.h,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12.r),
-                        border: Border.all(color: const Color(0xFFE8ECF0)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withAlpha(4),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.search_rounded,
-                            size: 14.w,
-                            color: AppColors.primary500,
-                          ),
-                          SizedBox(width: 6.w),
-                          Flexible(
-                            child: Text(
-                              e.value,
-                              style: TextStyle(
-                                fontSize: 12.sp,
-                                color: AppColors.slate600,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                  .animate()
-                  .fadeIn(
-                    delay: Duration(milliseconds: 400 + e.key * 60),
-                    duration: 300.ms,
-                  )
-                  .slideY(begin: 0.1, end: 0);
-            }).toList(),
-          ),
-          SizedBox(height: 24.h),
-          // How it works
+          // Bubble
           Container(
-            padding: EdgeInsets.all(16.w),
+            margin: EdgeInsets.only(bottom: 4.h),
+            constraints: BoxConstraints(maxWidth: 0.78.sw),
+            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primary50.withAlpha(120),
-                  const Color(0xFFF3F0FF).withAlpha(120),
-                ],
+              color: isUser ? AppColors.primary600 : Colors.white,
+              borderRadius: BorderRadius.circular(18.r).copyWith(
+                bottomRight: isUser ? Radius.circular(4.r) : Radius.circular(18.r),
+                bottomLeft: isUser ? Radius.circular(18.r) : Radius.circular(4.r),
               ),
-              borderRadius: BorderRadius.circular(18.r),
-              border: Border.all(color: AppColors.primary200.withAlpha(40)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isAr
-                      ? 'كيف يعمل البحث الذكي؟'
-                      : 'How does Smart Search work?',
-                  style: TextStyle(
-                    fontSize: 14.sp,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.slate800,
-                  ),
-                ),
-                SizedBox(height: 10.h),
-                _howItWorksRow(
-                  Icons.text_fields_rounded,
-                  isAr
-                      ? 'اكتب وصف بكلماتك العادية'
-                      : 'Describe what you want naturally',
-                  AppColors.primary600,
-                ),
-                SizedBox(height: 8.h),
-                _howItWorksRow(
-                  Icons.psychology_rounded,
-                  isAr
-                      ? 'الذكاء الاصطناعي يفهم احتياجك'
-                      : 'AI understands your needs',
-                  const Color(0xFF7C3AED),
-                ),
-                SizedBox(height: 8.h),
-                _howItWorksRow(
-                  Icons.shopping_bag_rounded,
-                  isAr
-                      ? 'يرشحلك أفضل المنتجات'
-                      : 'Recommends best products',
-                  AppColors.auctionOrange,
-                ),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withAlpha(isUser ? 20 : 8),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
               ],
             ),
-          ).animate().fadeIn(delay: 700.ms).slideY(begin: 0.05, end: 0),
-        ],
-      ),
-    );
-  }
-
-  Widget _howItWorksRow(IconData icon, String text, Color color) {
-    return Row(
-      children: [
-        Container(
-          padding: EdgeInsets.all(6.w),
-          decoration: BoxDecoration(
-            color: color.withAlpha(12),
-            borderRadius: BorderRadius.circular(8.r),
-          ),
-          child: Icon(icon, size: 16.w, color: color),
-        ),
-        SizedBox(width: 10.w),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 12.sp,
-              color: AppColors.slate600,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // -----------------------------------------------------------------------
-  // LOADING STATE
-  // -----------------------------------------------------------------------
-  Widget _buildLoadingState(bool isAr) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20.w),
-      child: Column(
-        children: [
-          SizedBox(height: 20.h),
-          // Animated brain
-          AnimatedBuilder(
-                animation: _brainCtrl,
-                builder: (_, __) => Transform.rotate(
-                  angle: math.sin(_brainCtrl.value * math.pi * 2) * 0.05,
-                  child: Container(
-                    padding: EdgeInsets.all(20.w),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.primary50,
-                      border: Border.all(
-                        color: AppColors.primary200.withAlpha(60),
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.psychology_rounded,
-                      size: 36.w,
-                      color: AppColors.primary500,
-                    ),
-                  ),
-                ),
-              )
-              .animate(onPlay: (c) => c.repeat(reverse: true))
-              .scaleXY(begin: 0.9, end: 1.05, duration: 1200.ms),
-          SizedBox(height: 16.h),
-          Text(
-                isAr
-                    ? 'الذكاء الاصطناعي يبحث...'
-                    : 'AI is searching...',
-                style: TextStyle(
-                  fontSize: 15.sp,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.slate700,
-                ),
-              )
-              .animate(onPlay: (c) => c.repeat(reverse: true))
-              .fadeIn(duration: 800.ms),
-          SizedBox(height: 6.h),
-          Text(
-            isAr
-                ? 'بيدور في كل المنتجات عشان يلاقيلك الأنسب'
-                : 'Scanning all products to find the best match',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12.sp, color: AppColors.slate400),
-          ),
-          SizedBox(height: 24.h),
-          // Progress shimmer cards
-          ...List.generate(
-            3,
-            (i) => Padding(
-              padding: EdgeInsets.only(bottom: 10.h),
-              child: AppShimmer(
-                width: double.infinity,
-                height: 60.h,
-                borderRadius: BorderRadius.circular(14.r),
+            child: Text(
+              msg.text,
+              style: TextStyle(
+                fontSize: 14.sp,
+                color: isUser ? Colors.white : AppColors.slate800,
+                fontWeight: FontWeight.w500,
+                height: 1.5,
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
 
-  // -----------------------------------------------------------------------
-  // ERROR
-  // -----------------------------------------------------------------------
-  Widget _buildErrorState(bool isAr) {
-    return Padding(
-      padding: EdgeInsets.all(20.w),
-      child: Container(
-        padding: EdgeInsets.all(16.w),
-        decoration: BoxDecoration(
-          color: AppColors.errorRed.withAlpha(8),
-          borderRadius: BorderRadius.circular(16.r),
-          border: Border.all(color: AppColors.errorRed.withAlpha(30)),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.error_outline_rounded,
-              color: AppColors.errorRed,
-              size: 22.w,
-            ),
-            SizedBox(width: 10.w),
-            Expanded(
-              child: Text(
-                _error!,
-                style: TextStyle(fontSize: 12.sp, color: AppColors.errorRed),
+          // Product cards (for assistant messages)
+          if (!isUser && msg.products.isNotEmpty) ...[
+            SizedBox(height: 8.h),
+            SizedBox(
+              height: 200.h,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: msg.products.length,
+                itemBuilder: (_, i) => _ProductCard(
+                  product: msg.products[i] as Map<String, dynamic>,
+                  isAr: isAr,
+                ),
               ),
             ),
           ],
-        ),
+          SizedBox(height: 12.h),
+        ],
       ),
     );
   }
 
-  // -----------------------------------------------------------------------
-  // RESULTS
-  // -----------------------------------------------------------------------
-
-  Widget _buildResults(bool isAr) {
-    final summary = _result?['answer']?['summary'] as String? ?? '';
-    final meta = _result?['meta'] as Map<String, dynamic>?;
-    final currency = ref.read(languageProvider).dict['currency'] as String;
-
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20.w),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  // ── Input bar ─────────────────────────────────────────────────
+  Widget _buildInputBar(bool isAr) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(12.w, 10.h, 12.w, 20.h),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withAlpha(10),
+              blurRadius: 12,
+              offset: const Offset(0, -3))
+        ],
+      ),
+      child: Row(
         children: [
-          if (summary.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(18.w),
+          Expanded(
+            child: Container(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                color: AppColors.slate50,
+                borderRadius: BorderRadius.circular(24.r),
+                border: Border.all(color: AppColors.slate200),
+              ),
+              child: TextField(
+                controller: _inputCtrl,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _send(),
+                style: TextStyle(
+                    fontSize: 14.sp,
+                    color: AppColors.slate900,
+                    fontWeight: FontWeight.w500),
+                decoration: InputDecoration(
+                  hintText: isAr
+                      ? 'اسأل عن أي منتج...'
+                      : 'Ask about any product...',
+                  hintStyle: TextStyle(
+                      color: AppColors.slate400,
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w400),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 18.w, vertical: 12.h),
+                  border: InputBorder.none,
                 ),
-                borderRadius: BorderRadius.circular(20.r),
+              ),
+            ),
+          ),
+          SizedBox(width: 10.w),
+          GestureDetector(
+            onTap: _sending ? null : _send,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 46.w,
+              height: 46.w,
+              decoration: BoxDecoration(
+                color: _sending ? AppColors.slate300 : AppColors.primary600,
+                shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withAlpha(15),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
+                    color: AppColors.primary600.withAlpha(_sending ? 0 : 60),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: EdgeInsets.all(6.w),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary500.withAlpha(25),
-                          borderRadius: BorderRadius.circular(8.r),
-                        ),
-                        child: Icon(
-                          Icons.auto_awesome,
-                          size: 16.w,
-                          color: AppColors.primary400,
-                        ),
-                      ),
-                      SizedBox(width: 8.w),
-                      Text(
-                        isAr ? 'ملخص الذكاء الاصطناعي' : 'AI Summary',
-                        style: TextStyle(
-                          fontSize: 13.sp,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary400,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 12.h),
-                  Text(
-                    summary,
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      color: Colors.white.withAlpha(220),
-                      height: 1.6,
-                    ),
-                  ),
-                ],
-              ),
-            ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0),
+              child: _sending
+                  ? Padding(
+                      padding: EdgeInsets.all(12.w),
+                      child: const CircularProgressIndicator(
+                          strokeWidth: 2.5, color: Colors.white),
+                    )
+                  : Icon(Icons.send_rounded,
+                      color: Colors.white, size: 20.w),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-          if (_loadingProducts) ...[
-            SizedBox(height: 20.h),
-            ...List.generate(
-              3,
-              (i) => Padding(
-                padding: EdgeInsets.only(bottom: 10.h),
-                child: AppShimmer(
-                  width: double.infinity,
-                  height: 90.h,
-                  borderRadius: BorderRadius.circular(16.r),
+// ── Product Card ─────────────────────────────────────────────────
+class _ProductCard extends StatelessWidget {
+  final Map<String, dynamic> product;
+  final bool isAr;
+
+  const _ProductCard({required this.product, required this.isAr});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = product['title'] ?? '';
+    final price = product['price'] ?? '';
+    final image = product['primary_image'] ?? product['image_url'] ?? '';
+    final id = product['id']?.toString() ?? '';
+    final condition = product['condition'] ?? '';
+
+    final condMap = {
+      'new': isAr ? 'جديد' : 'New',
+      'like-new': isAr ? 'شبه جديد' : 'Like New',
+      'good': isAr ? 'جيد' : 'Good',
+      'fair': isAr ? 'مقبول' : 'Fair',
+    };
+
+    return GestureDetector(
+      onTap: () {
+        if (id.isNotEmpty) context.push('/product/$id');
+      },
+      child: Container(
+        width: 160.w,
+        margin: EdgeInsets.only(right: 10.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16.r),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withAlpha(10),
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            ClipRRect(
+              borderRadius:
+                  BorderRadius.vertical(top: Radius.circular(16.r)),
+              child: image.isNotEmpty
+                  ? Image.network(
+                      image,
+                      height: 110.h,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _placeholder(),
+                    )
+                  : _placeholder(),
+            ),
+
+            // Info
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.all(10.w),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.slate800,
+                          height: 1.3),
+                    ),
+                    const Spacer(),
+                    if (condMap[condition] != null)
+                      Container(
+                        margin: EdgeInsets.only(bottom: 4.h),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 6.w, vertical: 2.h),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary50,
+                          borderRadius: BorderRadius.circular(6.r),
+                        ),
+                        child: Text(
+                          condMap[condition]!,
+                          style: TextStyle(
+                              fontSize: 10.sp,
+                              color: AppColors.primary600,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    Text(
+                      '$price ${isAr ? 'ج.م' : 'EGP'}',
+                      style: TextStyle(
+                          fontSize: 13.sp,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary600),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ] else if (_products.isNotEmpty) ...[
-            SizedBox(height: 20.h),
-            Row(
-              children: [
-                Icon(
-                  Icons.shopping_bag_rounded,
-                  size: 18.w,
-                  color: AppColors.primary600,
-                ),
-                SizedBox(width: 6.w),
-                Text(
-                  isAr
-                      ? 'المنتجات المقترحة'
-                      : 'Recommended Products',
-                  style: TextStyle(
-                    fontSize: 15.sp,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.slate800,
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary50,
-                    borderRadius: BorderRadius.circular(6.r),
-                  ),
-                  child: Text(
-                    '${_products.length}',
-                    style: TextStyle(
-                      fontSize: 12.sp,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary600,
-                    ),
-                  ),
-                ),
-              ],
-            ).animate().fadeIn(delay: 200.ms),
-            SizedBox(height: 10.h),
-            ..._products.asMap().entries.map((entry) {
-              final i = entry.key;
-              final p = entry.value;
-              final image = p.primaryImage;
-              final title = p.title;
-              final price = p.price;
-              final location = p.location;
-              final isAuction = p.isAuction;
-              final id = p.id.toString();
-
-              return GestureDetector(
-                    onTap: () => context.push('/product/$id'),
-                    child: Container(
-                      margin: EdgeInsets.only(bottom: 12.h),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16.r),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withAlpha(6),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                        border: Border.all(color: const Color(0xFFEEF0F2)),
-                      ),
-                      child: Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.only(
-                              topLeft: Radius.circular(16.r),
-                              bottomLeft: Radius.circular(16.r),
-                            ),
-                            child: image != null
-                                ? CachedNetworkImage(
-                                    imageUrl: image,
-                                    width: 90.w,
-                                    height: 90.w,
-                                    fit: BoxFit.cover,
-                                    placeholder: (_, __) => Container(
-                                      width: 90.w,
-                                      height: 90.w,
-                                      color: const Color(0xFFF3F4F6),
-                                    ),
-                                    errorWidget: (_, __, ___) => Container(
-                                      width: 90.w,
-                                      height: 90.w,
-                                      color: const Color(0xFFF3F4F6),
-                                      child: Icon(
-                                        Icons.image_outlined,
-                                        size: 28.w,
-                                        color: AppColors.slate300,
-                                      ),
-                                    ),
-                                  )
-                                : Container(
-                                    width: 90.w,
-                                    height: 90.w,
-                                    color: const Color(0xFFF3F4F6),
-                                    child: Icon(
-                                      Icons.image_outlined,
-                                      size: 28.w,
-                                      color: AppColors.slate300,
-                                    ),
-                                  ),
-                          ),
-                          SizedBox(width: 12.w),
-                          Expanded(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 12.h),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 6.w,
-                                      vertical: 2.h,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary50,
-                                      borderRadius: BorderRadius.circular(4.r),
-                                    ),
-                                    child: Text(
-                                      '#${i + 1} ${isAr ? "أفضل تطابق" : "Best match"}',
-                                      style: TextStyle(
-                                        fontSize: 9.sp,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.primary600,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(height: 4.h),
-                                  Text(
-                                    title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 13.sp,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.slate800,
-                                      height: 1.3,
-                                    ),
-                                  ),
-                                  SizedBox(height: 4.h),
-                                  Text(
-                                    '${double.tryParse(price)?.toStringAsFixed(0) ?? price} $currency',
-                                    style: TextStyle(
-                                      fontSize: 14.sp,
-                                      fontWeight: FontWeight.w900,
-                                      color: isAuction
-                                          ? AppColors.auctionOrange
-                                          : AppColors.primary600,
-                                    ),
-                                  ),
-                                  if (location.isNotEmpty)
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.location_on_rounded,
-                                          size: 11.w,
-                                          color: AppColors.slate400,
-                                        ),
-                                        SizedBox(width: 2.w),
-                                        Expanded(
-                                          child: Text(
-                                            location,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 10.sp,
-                                              color: AppColors.slate400,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.only(right: 12.w),
-                            child: Container(
-                              padding: EdgeInsets.all(8.w),
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary50,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                size: 12.w,
-                                color: AppColors.primary600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                  .animate()
-                  .fadeIn(
-                    delay: Duration(milliseconds: 300 + i * 80),
-                    duration: 350.ms,
-                  )
-                  .slideX(begin: 0.05, end: 0);
-            }),
           ],
-
-          if (meta != null) ...[
-            SizedBox(height: 12.h),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8F9FA),
-                borderRadius: BorderRadius.circular(10.r),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.speed_rounded,
-                    size: 14.w,
-                    color: AppColors.slate400,
-                  ),
-                  SizedBox(width: 6.w),
-                  Text(
-                    '${meta["latency_ms"]}ms - SQL: ${meta["sql_results"]} - Vector: ${meta["vector_results"]}',
-                    style: TextStyle(
-                      fontSize: 11.sp,
-                      color: AppColors.slate400,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ).animate().fadeIn(delay: 600.ms),
-          ],
-        ],
+        ),
       ),
+    );
+  }
+
+  Widget _placeholder() {
+    return Container(
+      height: 110.h,
+      width: double.infinity,
+      color: AppColors.slate100,
+      child: Icon(Icons.image_outlined,
+          size: 32.w, color: AppColors.slate300),
     );
   }
 }

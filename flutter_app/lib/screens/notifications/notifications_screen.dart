@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import '../../providers/language_provider.dart';
 import '../../services/notifications_service.dart';
 import '../../core/constants/app_colors.dart';
@@ -346,6 +347,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                       try {
                         await NotificationsService.markRead(id: n['id']);
                       } catch (_) {}
+                    }
+                    // Navigate to smart-agent for agent-related notifications
+                    final title = (n['title'] as String? ?? '');
+                    final msg = (n['message'] as String? ?? '');
+                    final combined = '$title $msg';
+                    if (combined.contains('وجد') ||
+                        combined.contains('تجاوز مزايدتك') ||
+                        combined.contains('معلق') ||
+                        combined.contains('موافق') ||
+                        combined.contains('pending') ||
+                        combined.contains('وكيل') && combined.contains('منتج')) {
+                      if (context.mounted) context.push('/smart-agent');
                     }
                   },
                   child: _NotifCard(

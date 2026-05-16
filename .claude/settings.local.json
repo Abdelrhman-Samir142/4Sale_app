@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"d:\\\\4app\\\\backend\\\\rag\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Get-ChildItem -Path \"d:\\\\4app\" -Directory)",
+      "Bash(Select-Object Name)"
+    ]
+  }
+}

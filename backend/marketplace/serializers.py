@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.utils import timezone
-from .models import UserProfile, Product, ProductImage, Auction, Bid, Conversation, Message, UserAgent, Notification
+from django.db import models
+from .models import UserProfile, Product, ProductImage, Auction, Bid, Conversation, Message, UserAgent, Notification, AgentPendingBid
 
 import logging
 logger = logging.getLogger(__name__)
@@ -214,7 +215,7 @@ def run_auto_bidding(auction, detected_item):
         ).filter(
             # Flexible match: match English ID OR Arabic label
             models.Q(target_item=detected_item) | 
-            models.Q(target_item=YOLO_CLASS_LABELS.get(detected_item, ''))
+            models.Q(target_item=__import__('ai.classifier', fromlist=['YOLO_CLASS_LABELS']).YOLO_CLASS_LABELS.get(detected_item, ''))
         ).exclude(user=seller)
          .exclude(user=auction.highest_bidder)
          .select_related('user', 'user__profile')
@@ -296,105 +297,45 @@ def run_auto_bidding(auction, detected_item):
         return
     
     logger.info(f"[Agent] 🤖 Found {len(matching_agents)} true matching agent(s) for '{detected_item}'")
-    
-    if len(matching_agents) == 1:
-        agent = matching_agents[0]
-        bid_amount = starting_bid
-        
-        profile = agent.user.profile
-        if profile.wallet_balance < bid_amount:
-            logger.info(f"[Agent] {agent.user.username} has insufficient funds")
-            return
-            
-        # Deduct
-        profile.wallet_balance -= bid_amount
-        profile.save(update_fields=['wallet_balance'])
-        
-        Bid.objects.create(
-            auction=auction,
-            bidder=agent.user,
-            amount=bid_amount
+
+    # ── Pending-Bid Creation (no wallet deduction, no Bid yet) ─────
+    # Each matching agent gets a pending bid proposal — the user must approve.
+    for agent in matching_agents:
+        proposed_amount = starting_bid if auction.highest_bidder is None else auction.current_bid + BID_INCREMENT
+        reasoning = getattr(agent, '_ai_reasoning', '')
+
+        # Avoid duplicate pending bids for same agent+auction
+        if AgentPendingBid.objects.filter(agent=agent, auction=auction, status='pending').exists():
+            logger.info(f"[Agent] Already has a pending bid for {agent.user.username} on auction {auction.id}")
+            continue
+
+        notification = Notification.objects.create(
+            user=agent.user,
+            title="🤖 وجد الوكيل منتجاً مناسباً!",
+            message=(
+                f"وجدت منتجاً يطابق تماماً ما تبحث عنه: \"{auction.product.title}\"\n"
+                f"السعر المقترح: {proposed_amount} ج.م\n"
+                f"انتظر موافقتك للمزايدة."
+            ),
+            related_product=auction.product,
+            reasoning=reasoning,
         )
-        auction.current_bid = bid_amount
-        auction.highest_bidder = agent.user
-        auction.save(update_fields=['current_bid', 'highest_bidder'])
-        
-        _notify_agent_bid(agent, auction, bid_amount, detected_item)
-        logger.info(f"[Agent] ✅ Single agent {agent.user.username} bid {bid_amount}")
-    
-    else:
-        winner = matching_agents[0]
-        runner_up = matching_agents[1]
-        
-        runner_up_bid_amount = runner_up.max_budget
-        
-        if runner_up.user.profile.wallet_balance >= runner_up_bid_amount:
-            # Deduct from runner up
-            runner_up_profile = runner_up.user.profile
-            runner_up_profile.wallet_balance -= runner_up_bid_amount
-            runner_up_profile.save(update_fields=['wallet_balance'])
-            
-            Bid.objects.create(
-                auction=auction,
-                bidder=runner_up.user,
-                amount=runner_up_bid_amount
-            )
-            _notify_agent_bid(runner_up, auction, runner_up_bid_amount, detected_item, outbid=True)
-            
-            winning_bid = min(
-                winner.max_budget,
-                runner_up_bid_amount + BID_INCREMENT
-            )
-            
-            if winner.user.profile.wallet_balance >= winning_bid:
-                # Deduct from winner
-                winner_profile = winner.user.profile
-                winner_profile.wallet_balance -= winning_bid
-                winner_profile.save(update_fields=['wallet_balance'])
-                
-                # Refund runner up
-                runner_up_profile.wallet_balance += runner_up_bid_amount
-                runner_up_profile.save(update_fields=['wallet_balance'])
-                
-                Bid.objects.create(
-                    auction=auction,
-                    bidder=winner.user,
-                    amount=winning_bid
-                )
-                
-                auction.current_bid = winning_bid
-                auction.highest_bidder = winner.user
-                auction.save(update_fields=['current_bid', 'highest_bidder'])
-                
-                _notify_agent_bid(winner, auction, winning_bid, detected_item)
-                
-                logger.info(
-                    f"[Agent] ✅ Bidding war: {winner.user.username} wins at {winning_bid} "
-                    f"(beat {runner_up.user.username} at {runner_up_bid_amount})"
-                )
-            else:
-                # Winner can't pay, runner up wins
-                auction.current_bid = runner_up_bid_amount
-                auction.highest_bidder = runner_up.user
-                auction.save(update_fields=['current_bid', 'highest_bidder'])
-                logger.info(f"[Agent] Winner had insufficient funds. Runner up wins.")
-        else:
-            # Fallback if runner up can't pay
-            bid_amount = starting_bid
-            if winner.user.profile.wallet_balance >= bid_amount:
-                winner_profile = winner.user.profile
-                winner_profile.wallet_balance -= bid_amount
-                winner_profile.save(update_fields=['wallet_balance'])
-                
-                Bid.objects.create(
-                    auction=auction,
-                    bidder=winner.user,
-                    amount=bid_amount
-                )
-                auction.current_bid = bid_amount
-                auction.highest_bidder = winner.user
-                auction.save(update_fields=['current_bid', 'highest_bidder'])
-                _notify_agent_bid(winner, auction, bid_amount, detected_item)
+
+        AgentPendingBid.objects.create(
+            agent=agent,
+            auction=auction,
+            proposed_amount=proposed_amount,
+            previous_amount=Decimal('0.00'),
+            status='pending',
+            ai_reasoning=reasoning,
+            notification=notification,
+            is_counter_bid=False,
+            round_number=1,
+        )
+        logger.info(
+            f"[Agent] ✅ Pending bid created for {agent.user.username} — "
+            f"proposed {proposed_amount} on '{auction.product.title}'"
+        )
 
 
 def _notify_agent_bid(agent, auction, amount, detected_item, outbid=False):
@@ -541,47 +482,60 @@ def agent_counter_bid(auction, manual_bidder, round_number=1):
                 f"[Agent] ⛔ {agent.user.username}'s agent can't counter-bid "
                 f"({counter_amount} > budget {agent.max_budget})"
             )
-            _notify_agent_bid(agent, auction, auction.current_bid, detected_item, outbid=True)
+            Notification.objects.create(
+                user=agent.user,
+                title="⛔ الوكيل تجاوز الميزانية",
+                message=(
+                    f"تجاوزت مزايدتك على \"{product.title}\" حد الميزانية القصوى ({agent.max_budget} ج.م). "
+                    f"المزايدة الحالية: {auction.current_bid} ج.م."
+                ),
+                related_product=product,
+            )
             continue
 
-        # Check previous bid to deduct only the difference
-        previous_bid = Bid.objects.filter(auction=auction, bidder=agent.user).order_by('-amount').first()
-        previous_amount = previous_bid.amount if previous_bid else Decimal('0.00')
-        difference = counter_amount - previous_amount
+        # Expire any stale pending bids for this agent+auction
+        AgentPendingBid.objects.filter(
+            agent=agent, auction=auction, status='pending'
+        ).update(status='expired')
 
-        if agent.user.profile.wallet_balance < difference:
-            logger.info(f"[Agent] {agent.user.username} has insufficient funds for difference")
-            continue
+        # Determine previous_amount: last approved pending bid, else last actual Bid
+        last_approved = AgentPendingBid.objects.filter(
+            agent=agent, auction=auction, status='approved'
+        ).order_by('-created_at').first()
+        if last_approved:
+            previous_amount = last_approved.proposed_amount
+        else:
+            previous_bid = Bid.objects.filter(auction=auction, bidder=agent.user).order_by('-amount').first()
+            previous_amount = previous_bid.amount if previous_bid else Decimal('0.00')
 
-        # Deduct difference
-        agent.user.profile.wallet_balance -= difference
-        agent.user.profile.save(update_fields=['wallet_balance'])
+        delta = counter_amount - previous_amount
 
-        # Place the counter-bid
-        Bid.objects.create(
+        notification = Notification.objects.create(
+            user=agent.user,
+            title="⚡ تجاوز مزايدتك أحد المزايدين!",
+            message=(
+                f"تجاوز أحدهم مزايدتك على \"{product.title}\"\n"
+                f"الوكيل يقترح المزايدة بـ {counter_amount} ج.م\n"
+                f"فرق {delta} ج.م فقط — انتظر موافقتك."
+            ),
+            related_product=product,
+        )
+
+        AgentPendingBid.objects.create(
+            agent=agent,
             auction=auction,
-            bidder=agent.user,
-            amount=counter_amount
+            proposed_amount=counter_amount,
+            previous_amount=previous_amount,
+            status='pending',
+            ai_reasoning=f"Counter-bid after being outbid. Delta: {delta} EGP",
+            notification=notification,
+            is_counter_bid=True,
+            round_number=round_number,
         )
-        
-        # Refund the outbid user (previous highest bidder)
-        previous_highest_bidder = auction.highest_bidder
-        if previous_highest_bidder and previous_highest_bidder != agent.user:
-            highest_bid = Bid.objects.filter(auction=auction, bidder=previous_highest_bidder).order_by('-amount').first()
-            if highest_bid:
-                previous_highest_bidder.profile.wallet_balance += highest_bid.amount
-                previous_highest_bidder.profile.save(update_fields=['wallet_balance'])
-                logger.info(f"[Agent] Refunded {previous_highest_bidder.username} amount {highest_bid.amount}")
-
-        auction.current_bid = counter_amount
-        auction.highest_bidder = agent.user
-        auction.save(update_fields=['current_bid', 'highest_bidder'])
-
         logger.info(
-            f"[Agent] 🤖 {agent.user.username}'s agent counter-bid "
-            f"{counter_amount} on '{product.title}'"
+            f"[Agent] 🤖 Pending counter-bid created for {agent.user.username}: "
+            f"{counter_amount} (delta {delta}) on '{product.title}'"
         )
-        _notify_agent_bid(agent, auction, counter_amount, detected_item)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -900,3 +854,55 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = ['id', 'title', 'message', 'reasoning', 'is_read', 'related_product', 'product_title', 'created_at']
         read_only_fields = ['id', 'title', 'message', 'reasoning', 'related_product', 'created_at']
+
+
+class AgentPendingBidSerializer(serializers.ModelSerializer):
+    """Serializer for AgentPendingBid — includes auction/product context for the Flutter UI."""
+    from decimal import Decimal as _Decimal
+
+    auction_id = serializers.IntegerField(source='auction.id', read_only=True)
+    product_title = serializers.CharField(source='auction.product.title', read_only=True)
+    product_image = serializers.SerializerMethodField()
+    current_bid = serializers.DecimalField(
+        source='auction.current_bid', max_digits=10, decimal_places=2, read_only=True
+    )
+    auction_end_time = serializers.DateTimeField(source='auction.end_time', read_only=True)
+    auction_is_active = serializers.BooleanField(source='auction.is_active', read_only=True)
+    agent_id = serializers.IntegerField(source='agent.id', read_only=True)
+    agent_target = serializers.CharField(source='agent.target_item', read_only=True)
+    delta_amount = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AgentPendingBid
+        fields = [
+            'id', 'agent_id', 'agent_target',
+            'auction_id', 'product_title', 'product_image',
+            'current_bid', 'auction_end_time', 'auction_is_active',
+            'proposed_amount', 'previous_amount', 'delta_amount',
+            'status', 'ai_reasoning', 'is_counter_bid', 'round_number',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+    def get_product_image(self, obj):
+        try:
+            primary_img = obj.auction.product.images.filter(is_primary=True).first()
+            if not primary_img:
+                primary_img = obj.auction.product.images.first()
+            if primary_img and primary_img.image:
+                url = primary_img.image.url
+                if url.startswith('http'):
+                    return url
+                request = self.context.get('request')
+                if request:
+                    return request.build_absolute_uri(url)
+                return url
+        except Exception:
+            pass
+        return None
+
+    def get_delta_amount(self, obj):
+        """Amount the wallet will be charged on approval (proposed - previous)."""
+        from decimal import Decimal
+        delta = obj.proposed_amount - (obj.previous_amount or Decimal('0.00'))
+        return str(max(delta, Decimal('0.00')))

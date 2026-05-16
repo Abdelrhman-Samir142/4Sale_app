@@ -1,146 +1,131 @@
 """
-Hybrid RAG Engine (V2 - LangGraph)
+Hybrid RAG Engine — V2 (LangGraph wrapper).
 
-Orchestrates the entire RAG pipeline using LangGraph:
-1. Cache check (LRU)
-2. LangGraph Agent (.invoke)
-   - Zero-LLM Intent Routing
-   - Follow-up logic
-   - Parallel Retrieval (Vector + SQL)
-   - Reciprocal Rank Fusion
-   - LLM Synthesis + Guardrails
-3. Cache Set
-4. Logging to RAGQueryLog
+Thin wrapper that delegates to the V2 LangGraph agent.
+API surface stays identical — no frontend changes needed.
 """
 
 import time
 import logging
-from langchain_core.runnables import RunnableConfig
-
-from rag.response_cache import _cache
-from rag.graph.rag_graph import get_rag_agent
 
 logger = logging.getLogger(__name__)
 
 
 def rag_query(query: str, user=None, request=None, history: list = None) -> dict:
     """
-    Main entry point for the API view.
-    Checks cache, runs the LangGraph pipeline if needed, and logs the query.
+    Full RAG pipeline — delegates to the V2 LangGraph agent.
+
+    Returns:
+    {
+        "answer": {"summary": ..., "items": [...], "suggested_action": ...},
+        "products_data": [...],
+        "meta": {"latency_ms": ..., "sql_results": ..., ...}
+    }
     """
     from rag.models import RAGQueryLog
+    from rag.response_cache import get_cache
+    from rag.graph.rag_graph import get_rag_agent
 
-    start_time = time.time()
-    user_id = user.id if user and user.is_authenticated else 0
-    history = history or []
+    start = time.time()
     error_msg = ""
-    cache_hit = False
+    cache = get_cache()
+    uid = str(user.id) if user and hasattr(user, 'id') and user.is_authenticated else "anon"
 
-    # 1. Cache Check
-    cached_response = _cache.get(query, user_id=user_id)
-    if cached_response:
-        logger.info(f"[HybridEngine] Cache hit for query: {query[:40]}")
-        cache_hit = True
-        final_data = cached_response
-        final_data["meta"]["cache_hit"] = True
-        
-        # We still log the cache hit
-        latency_ms = int((time.time() - start_time) * 1000)
-        try:
-            RAGQueryLog.objects.create(
-                user=user if user and user.is_authenticated else None,
-                query_text=query,
-                generated_sql="-- CACHE HIT",
-                sql_results_count=final_data["meta"].get("sql_results", 0),
-                vector_results_count=final_data["meta"].get("vector_results", 0),
-                merged_results_count=final_data["meta"].get("merged_results", 0),
-                final_answer=final_data["answer"].get("summary", ""),
-                latency_ms=latency_ms,
-                error="",
-            )
-        except Exception as e:
-            logger.error(f"[RAG] Logging failed: {e}")
-            
-        return final_data
+    # ── Cache Check ──
+    cached = cache.get(query, user_id=uid)
+    if cached:
+        latency_ms = int((time.time() - start) * 1000)
+        result = cached.copy()
+        result["meta"] = {**result.get("meta", {}), "latency_ms": latency_ms, "cache_hit": True}
+        _log(user, query, result, latency_ms, "")
+        return result
 
-    # 2. Run LangGraph Agent
-    agent = get_rag_agent()
-    
-    # Setup initial state
-    initial_state = {
-        "query": query,
-        "messages": history,
-        "retry_count": 0,
-        "metadata": {},
-    }
-    
-    # Pass request object in config so synthesis node can build absolute image URLs
-    config = RunnableConfig(
-        configurable={"request": request}
-    )
-
+    # ── Run V2 LangGraph ──
     try:
-        logger.info(f"[HybridEngine] Invoking LangGraph for: {query[:40]}")
-        final_state = agent.invoke(initial_state, config=config)
-        
-        # Extract results from state
-        answer = final_state.get("final_response", {})
+        agent = get_rag_agent()
+
+        initial_state = {
+            "query": query,
+            "messages": history or [],
+            "retry_count": 0,
+            "entities": {},
+            "vector_results": [],
+            "sql_results": [],
+            "fused_results": [],
+            "products_data": [],
+            "vector_count": 0,
+            "sql_count": 0,
+            "generated_sql": "",
+            "metadata": {},
+        }
+
+        final_state = agent.invoke(initial_state)
+
+        answer = final_state.get("final_response", {
+            "summary": "حصلت مشكلة تقنية. جرب تاني بعد شوية.",
+            "items": [],
+            "suggested_action": "view_listing",
+        })
         products_data = final_state.get("products_data", [])
-        intent = final_state.get("intent", "search")
         sql_count = final_state.get("sql_count", 0)
         vector_count = final_state.get("vector_count", 0)
-        fused = final_state.get("fused_results", [])
         generated_sql = final_state.get("generated_sql", "")
-        
+        fused_count = len(final_state.get("fused_results", []))
+        intent = final_state.get("intent", "unknown")
+
     except Exception as e:
-        logger.error(f"[HybridEngine] Graph invocation failed: {e}")
+        logger.error(f"[RAG] LangGraph pipeline error: {e}")
         error_msg = str(e)
         answer = {
-            "summary": "حصلت مشكلة تقنية في السيرفر. جرب تاني بعد شوية.",
+            "summary": "حصلت مشكلة تقنية. جرب تاني بعد شوية.",
             "items": [],
             "suggested_action": "view_listing",
         }
         products_data = []
-        intent = "error"
-        sql_count = 0
-        vector_count = 0
-        fused = []
+        sql_count = vector_count = fused_count = 0
         generated_sql = ""
+        intent = "error"
 
-    latency_ms = int((time.time() - start_time) * 1000)
+    latency_ms = int((time.time() - start) * 1000)
 
-    # 3. Build Final Response
-    final_data = {
+    result = {
         "answer": answer,
         "products_data": products_data,
         "meta": {
             "latency_ms": latency_ms,
             "sql_results": sql_count,
             "vector_results": vector_count,
-            "merged_results": len(fused),
+            "fused_results": fused_count,
             "intent": intent,
             "cache_hit": False,
         }
     }
 
-    # 4. Cache Set (only if successful)
-    if not error_msg and intent != "error":
-        _cache.set(query, final_data, user_id=user_id)
+    # ── Cache ──
+    if not error_msg:
+        cache.set(query, result, user_id=uid)
 
-    # 5. Log to Database
+    # ── Log ──
+    _log(user, query, result, latency_ms, error_msg, generated_sql)
+
+    return result
+
+
+def _log(user, query, result, latency_ms, error, sql=""):
+    """Log query to database."""
+    from rag.models import RAGQueryLog
     try:
+        meta = result.get("meta", {})
         RAGQueryLog.objects.create(
             user=user if user and user.is_authenticated else None,
             query_text=query,
-            generated_sql=generated_sql,
-            sql_results_count=sql_count,
-            vector_results_count=vector_count,
-            merged_results_count=len(fused),
-            final_answer=answer.get("summary", ""),
+            generated_sql=sql or "[N/A]",
+            sql_results_count=meta.get("sql_results", 0),
+            vector_results_count=meta.get("vector_results", 0),
+            merged_results_count=meta.get("fused_results", 0),
+            final_answer=result.get("answer", {}).get("summary", ""),
             latency_ms=latency_ms,
-            error=error_msg,
+            error=error,
         )
     except Exception as e:
-        logger.error(f"[HybridEngine] Logging failed: {e}")
-
-    return final_data
+        logger.error(f"[RAG] Logging failed: {e}")

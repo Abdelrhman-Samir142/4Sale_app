@@ -25,6 +25,9 @@ from .views import (
     get_categories,
     health_check,
     visual_search_view,
+    agent_pending_bids_list,
+    agent_pending_bid_approve,
+    agent_pending_bid_reject,
 )
 from .admin_views import (
     AdminProductViewSet,
@@ -80,6 +83,11 @@ urlpatterns = [
     
     # Router URLs
     path('', include(router.urls)),
+
+    # Agent Pending Bids
+    path('agent-pending-bids/', agent_pending_bids_list, name='agent-pending-bids-list'),
+    path('agent-pending-bids/<int:pk>/approve/', agent_pending_bid_approve, name='agent-pending-bid-approve'),
+    path('agent-pending-bids/<int:pk>/reject/', agent_pending_bid_reject, name='agent-pending-bid-reject'),
 
     # Health check — for load balancers and monitoring
     path('health/', health_check, name='health-check'),

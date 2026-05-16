@@ -117,7 +117,7 @@ class _AIFeaturesBannerState extends State<AIFeaturesBanner>
                         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.search_rounded, size: 16.w, color: Colors.white),
                           SizedBox(width: 6.w),
-                          Text(widget.homeDict['smartSearch'] as String? ?? (isAr ? 'بحث ذكي' : 'Smart Search'),
+                          Text(widget.homeDict['smartSearch'] as String? ?? (isAr ? 'مساعد ذكي' : 'Smart Assistant'),
                               style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w700, color: Colors.white)),
                         ]),
                       ),

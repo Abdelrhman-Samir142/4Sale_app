@@ -47,7 +47,7 @@ class AppColors {
   static const Color slate950 = Color(0xFF020617);
 
   // ── Accent colours (sections) ─────────────────────────────────
-  static const Color auctionOrange = Color(0xFFF97316);
+  static const Color auctionOrange = primary600;
   static const Color recommendedPurple = Color(0xFF9333EA);
   static const Color latestBlue = Color(0xFF2563EB);
   static const Color errorRed = Color(0xFFEF4444);
@@ -62,7 +62,7 @@ class AppColors {
   );
 
   static const LinearGradient auctionGradient = LinearGradient(
-    colors: [Color(0xFFF97316), Color(0xFFEF4444)],
+    colors: [primary600, primary400],
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
   );
